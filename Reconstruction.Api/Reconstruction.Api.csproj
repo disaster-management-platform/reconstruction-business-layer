@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Platform.DAL/Platform.DAL.csproj" />
+    <ProjectReference Include="../Reconstruction.Application/Reconstruction.Application.csproj" />
+    <ProjectReference Include="../Reconstruction.Infrastructure/Reconstruction.Infrastructure.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
+  </ItemGroup>
+  <ItemGroup><ProjectReference Include="../Platform.Security/Platform.Security.csproj" /></ItemGroup>
+</Project>

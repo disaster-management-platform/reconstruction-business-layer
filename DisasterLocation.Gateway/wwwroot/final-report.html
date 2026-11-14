@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reporte final · Reconstrucción</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/reconstruction.css">
+  <link rel="stylesheet" href="/monitoring.css">
+  <link rel="stylesheet" href="/final-report.css">
+  <script src="/final-report.js" defer></script>
+  <script src="/session.js"></script>
+</head>
+<body>
+  <header class="site-header"><a class="brand" href="/">◎ Desastres</a><nav aria-label="Secciones"><a href="/reconstruction.html">Propuestas</a><a href="/monitoring.html">Monitoreo</a></nav></header>
+  <main>
+    <section class="intro"><div><p class="eyebrow">RECONSTRUCCIÓN · PROYECTO FINALIZADO</p><h1>Reporte final del proyecto.</h1><p>Consolidado de todas las actividades y sus reportes de ejecución.</p></div></section>
+    <p id="report-status" class="status" role="status" aria-live="polite"></p>
+    <div class="report-actions"><a id="back" href="/monitoring.html">Volver al proyecto</a><button id="print-report" class="secondary" type="button" disabled>Imprimir reporte</button></div>
+    <div id="final-report" hidden>
+      <section class="panel source-panel" aria-labelledby="project-title"><h2 id="project-title">Datos del proyecto</h2><dl id="project-data" class="report-data"></dl></section>
+      <section class="panel source-panel" aria-labelledby="summary-title">
+        <h2 id="summary-title">Resumen de ejecución</h2>
+        <div class="metrics"><div><span>Presupuesto bloqueado</span><strong id="final-budget"></strong></div><div><span>Costo total ejecutado</span><strong id="total-executed"></strong></div><div><span>Presupuesto restante</span><strong id="remaining-budget"></strong></div><div><span>Reportes consolidados</span><strong id="total-reports"></strong></div></div>
+        <p id="activity-summary"></p><p id="missing-reports" class="muted" hidden></p>
+      </section>
+      <section class="panel source-panel" aria-labelledby="activities-title"><h2 id="activities-title">Cronograma y reportes de todas las actividades</h2><div id="activities"></div></section>
+    </div>
+  </main>
+  <footer>Reconstrucción · Reporte final del proyecto</footer>
+</body>
+</html>

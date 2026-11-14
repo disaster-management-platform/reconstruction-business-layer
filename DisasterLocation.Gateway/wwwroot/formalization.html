@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Formalizar proyecto · Reconstrucción</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/reconstruction.css">
+  <link rel="stylesheet" href="/formalization.css">
+  <script src="/workflow.js" defer></script>
+  <script src="/formalization.js" defer></script>
+  <script src="/session.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">◎ Desastres</a>
+    <nav aria-label="Secciones"><a href="/reconstruction.html">Propuestas</a><a href="/formalization.html" aria-current="page">Formalización</a><a href="/monitoring.html">Monitoreo</a></nav>
+  </header>
+  <main>
+    <section class="intro"><div><p class="eyebrow">RECONSTRUCCIÓN · FORMALIZACIÓN</p><h1>Formalización de proyectos</h1><p>Coordina con las entidades especializadas y registra el presupuesto y el cronograma acordados.</p></div></section>
+    <section class="panel source-panel" aria-labelledby="project-title">
+      <div class="section-heading"><span class="step">01</span><h2 id="project-title">Proyecto</h2></div>
+      <label for="project">Selecciona el proyecto</label>
+      <select id="project" disabled><option value="">Cargando proyectos…</option></select>
+      <p id="load-status" class="status" role="status" aria-live="polite"></p>
+      <p id="project-state" class="muted"></p>
+      <a id="new-project" class="location-button" hidden>Crear nuevo proyecto para este desastre</a>
+    </section>
+    <div id="formalization" hidden>
+      <section class="panel source-panel" aria-labelledby="agreement-title">
+        <div class="section-heading"><span class="step">02</span><h2 id="agreement-title">Presupuesto y responsables</h2></div>
+        <p class="muted">Puedes ajustar estos datos antes de confirmar la formalización.</p>
+        <form id="formalization-form">
+          <fieldset id="agreement-fields">
+            <legend class="visually-hidden">Datos del acuerdo y cronograma</legend>
+            <div class="agreement-grid">
+              <div><label for="final-budget">Presupuesto acordado</label><input id="final-budget" name="finalBudget" type="number" min="0.01" step="0.01" required></div>
+              <div><label for="funding">Fuente de financiación</label><select id="funding" name="fundingSource" required><option value="">Cargando fuente de donaciones…</option></select>
+              <p id="funding-availability" class="muted"></p></div>
+              <div><label for="responsible">Responsable del proyecto</label><input id="responsible" name="responsible" maxlength="200" required></div>
+              <div><label for="contractor">Contratista</label><input id="contractor" name="contractor" maxlength="200" required></div>
+            </div>
+            <div class="schedule-heading"><h3>Cronograma de actividades</h3><button id="add-activity" type="button" class="secondary">Agregar actividad</button></div>
+            <div id="activities"></div>
+            <p id="activity-totals" class="muted" role="status" aria-live="polite"></p>
+            <button id="save" type="submit" class="primary">Guardar formalización</button>
+          </fieldset>
+          <p id="save-status" class="status" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+      <section class="panel source-panel" aria-labelledby="contract-title">
+        <div class="section-heading"><span class="step">03</span><h2 id="contract-title">Confirmar formalización</h2></div>
+        <p id="contract-hint" class="muted"></p>
+        <button id="confirm-formalization" type="button" class="primary" disabled>Confirmar y comenzar monitoreo</button>
+        <details><summary>Registrar contrato firmado (opcional)</summary><form id="contract-form">
+          <fieldset id="contract-fields" disabled>
+            <legend class="visually-hidden">Registro del contrato firmado</legend>
+            <label for="contract-reference">Referencia o enlace al contrato firmado</label>
+            <input id="contract-reference" name="contractReference" maxlength="1000" required placeholder="Número del documento o enlace al contrato firmado">
+            <label for="signed-at">Fecha y hora de firma</label><input id="signed-at" name="signedAt" type="datetime-local" required>
+            <label class="contract-confirmation"><input id="signed-confirmation" type="checkbox" required> Confirmo que el contrato ya fue firmado y corresponde al presupuesto guardado.</label>
+            <button id="register-contract" type="submit" class="primary">Registrar contrato y bloquear presupuesto</button>
+          </fieldset>
+          <p id="contract-status" class="status" role="status" aria-live="polite"></p>
+        </form></details>
+        <div id="locked-summary" hidden></div>
+      </section>
+    </div>
+  </main>
+  <footer>Reconstrucción · Formalización del proyecto</footer>
+</body>
+</html>

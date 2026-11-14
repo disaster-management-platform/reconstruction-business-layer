@@ -1,0 +1,45 @@
+@base = http://localhost:5080
+@disasterId = 1
+@proposalId = 00000000-0000-0000-0000-000000000000
+@projectId = 00000000-0000-0000-0000-000000000000
+@activityId = 00000000-0000-0000-0000-000000000000
+@token = REEMPLAZAR_POR_TOKEN_DEL_EMISOR
+
+### En demostración local no se requiere token. En otro modo, reemplazarlo.
+GET {{base}}/api/reconstruccion/ready
+
+### El desastre debe estar en Recovery. Actualizar versiones e IDs con cada respuesta.
+POST {{base}}/api/reconstruccion/propuestas/generar
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"disasterId":{{disasterId}}}
+
+### Consultar la fuente real antes de formalizar.
+GET {{base}}/api/reconstruccion/financiacion?disasterId={{disasterId}}
+Authorization: Bearer {{token}}
+
+### Crear desde una propuesta vigente.
+POST {{base}}/api/reconstruccion/proyectos
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"proposalId":"{{proposalId}}","expectedVersion":1}
+
+### Confirmar después de guardar la formalización mediante la interfaz.
+POST {{base}}/api/reconstruccion/proyectos/{{projectId}}/confirmar-formalizacion
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"expectedVersion":2}
+
+### Las referencias deben provenir de adjuntos cargados al proyecto.
+POST {{base}}/api/reconstruccion/proyectos/{{projectId}}/actividades/{{activityId}}/reportes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"requestId":"11111111-1111-1111-1111-111111111111","status":"Completed","actualCost":0,"evidence":["attachment:REEMPLAZAR"],"documents":["attachment:REEMPLAZAR"],"expectedVersion":3}
+
+### Conservar requestId durante reintentos. Para otra operación generar otro UUID.
+GET {{base}}/api/reconstruccion/proyectos/{{projectId}}/auditoria
+Authorization: Bearer {{token}}

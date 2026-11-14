@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+**/App_Data/*.db
+**/App_Data/*.db-*
+**/*.migration.lock
+**/*.db.*.bak
+**/__pycache__/
+*.user
+.env
+.idea/
+.vscode/settings.json
+.DS_Store
