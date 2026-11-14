@@ -1,50 +1,138 @@
-# Reconstrucción
 
-Implementación .NET 10 con dominio, casos de uso, puertos, adaptadores HTTP, EF Core/SQLite, gateway YARP y RabbitMQ. Incluye el backend de desastres compatible con Android.
-![arquitectura.png](docs/arquitectura.png)
-## Ejecutar
+# Disaster Management Platform — Reconstrucción
+
+Implementación del módulo de Reconstrucción de la plataforma de gestión de desastres. Permite generar propuestas a partir de evaluaciones de daños, formalizar proyectos, gestionar sus presupuestos y actividades, registrar avances y consolidar los resultados de ejecución.
+
+Desarrollado en .NET 10, sobre el backend de desastres existente, conservando la compatibilidad con el cliente Android.
+
+## Arquitectura
+
+![Arquitectura](docs/arquitectura.png)
+
+El sistema sigue una arquitectura orientada a servicios con arquitectura hexagonal. Las reglas de negocio se mantienen independientes de los mecanismos de persistencia, comunicación e integración.
+
+- **Domain:** entidades, estados, políticas y reglas de negocio.
+- **Application:** servicios de negocio, casos de uso e interfaces de comunicación.
+- **Infrastructure:** adaptadores HTTP, mensajería y almacenamiento de archivos.
+- **DAL:** capa de acceso a datos centralizada mediante Entity Framework Core y SQLite. Los módulos comparten una base de datos, pero mantienen sus propios repositorios y contextos.
+- **API Gateway:** implementado con YARP para centralizar el acceso a los módulos y servir la interfaz web.
+
+El patrón Facade proporciona un punto de acceso a los servicios de Reconstrucción. La colaboración asíncrona se realiza mediante RabbitMQ, utilizando eventos tipados y colas independientes por consumidor.
+
+Se emplean los patrones Transactional Outbox e Inbox para preservar la consistencia entre la persistencia y la publicación de eventos, controlar duplicados y permitir la recuperación ante fallos de comunicación.
+
+### Servicios de negocio
+
+| Servicio | Responsabilidad |
+|---|---|
+| Definición | Clasificación de daños, generación de propuestas y distribución presupuestal según la gravedad promedio. |
+| Formalización | Creación de proyectos, asignación de responsables, reserva presupuestal y definición del cronograma. |
+| Monitoreo | Seguimiento de actividades, registro de costos, evidencias y revisiones presupuestales. |
+| Finalización | Validación de actividades terminadas, consolidación de reportes y liberación del presupuesto no ejecutado. |
+
+Los cambios de estado y presupuesto se registran mediante mecanismos de auditoría y control de concurrencia.
+
+
+## Lógica de negocio
+
+El proceso de reconstrucción se divide en cuatro etapas, cada una implementada mediante un servicio de negocio con responsabilidades independientes.
+
+### 1. Definición de propuestas
+
+Se consultan las evaluaciones de daños validadas y se agrupan por zona geográfica y tipo de activo. A cada nivel de daño se le asigna un peso que permite calcular la gravedad promedio de cada grupo y distribuir proporcionalmente el presupuesto disponible de donaciones.
+
+Las propuestas se actualizan cuando cambian las evaluaciones. El usuario selecciona cuáles se convertirán en proyectos de reconstrucción.
+
+### 2. Formalización
+
+Para cada propuesta seleccionada se define un proyecto con presupuesto, fuente de financiación, responsable, contratista y cronograma de actividades.
+
+El presupuesto se reserva de manera transaccional, evitando comprometer recursos superiores a los disponibles. Una vez confirmada la formalización, el proyecto pasa a monitoreo.
+
+### 3. Monitoreo
+
+Se realiza el seguimiento de las actividades mediante reportes que registran su estado, costos ejecutados, evidencias y documentación de soporte.
+
+El servicio controla el presupuesto de cada actividad y permite realizar revisiones presupuestales justificadas sin perder el historial de ejecución.
+
+### 4. Finalización y cierre
+
+Un proyecto puede cerrarse cuando todas sus actividades se encuentran terminadas y cuentan con sus respectivos reportes y evidencias.
+
+Se genera un reporte consolidado de la ejecución y se libera el presupuesto no utilizado, conservando el historial del proyecto y los costos ejecutados.
+
+### Reglas transversales
+
+- Control de las transiciones de estado de propuestas, proyectos y actividades.
+- Auditoría de operaciones y modificaciones presupuestales.
+- Control de concurrencia para evitar actualizaciones inconsistentes.
+- Idempotencia en el registro de reportes para evitar duplicidad de costos.
+- Comunicación asíncrona entre servicios mediante eventos de negocio publicados en RabbitMQ.
+
+## Tecnologías
+
+| Componente | Tecnología |
+|---|---|
+| Backend | .NET 10 / ASP.NET Core |
+| Persistencia | Entity Framework Core / SQLite |
+| API Gateway | YARP |
+| MOM | RabbitMQ / AMQP |
+| Integración | REST / JSON |
+| Seguridad | JWT / OpenID Connect |
+| Frontend | HTML, CSS, JavaScript y Leaflet |
+| Pruebas | xUnit y Python |
+
+## Ejecución
+
+Compilar la solución e iniciar el entorno local:
 
 ```bash
 dotnet build DisasterLocation.sln
 python3 scripts/run_local.py --demo
 ```
 
-Interfaz: http://localhost:5080. La demostración se identifica en pantalla: utiliza una identidad fija y datos externos simulados. `--messaging` habilita el broker configurado, que debe estar disponible. Para iniciar RabbitMQ local: `docker compose up -d rabbitmq`.
+Interfaz web: http://localhost:5080
 
-Sin `--demo`, configure identidad y los módulos externos mediante variables de entorno; no se habilitan permisos ni datos ficticios automáticamente. Salud: `/api/reconstruccion/health`; configuración y conexión a BD: `/api/reconstruccion/ready`. Readiness no sustituye la comprobación operativa de los servicios externos.
+Para habilitar la comunicación mediante RabbitMQ:
 
-## Negocio
+```bash
+docker compose up -d rabbitmq
+python3 scripts/run_local.py --demo --messaging
+```
 
-- Agrupación por zona y tipo de activo. Las categorías de daño son `None`, `Minor`, `Moderate`, `Severe`, `Destroyed`; no representan el nivel de emergencia.
-- Pesos relativos: 10, 20, 30 y 40. Peso de propuesta = promedio de los pesos de sus evaluaciones. Presupuesto propuesto = saldo recomendable × peso / suma de pesos. Se redondea por mayores residuos, conservando cada centavo. Dos propuestas con el mismo peso comparten por igual, independientemente del número de evaluaciones que contienen.
-- Se restan compromisos financieros y las estimaciones de borradores elegidos para mantener estable el resto de recomendaciones. Estas últimas son recomendaciones, no reservas financieras.
-- Solo evaluaciones validadas, con daño y revisión vigente. Un activo ya vinculado a un proyecto genera una revisión si cambia, no otro proyecto automático.
-- El desastre debe estar en `Recovery` o `Closed`. Sus fases avanzan `Registered → Response → Recovery → Closed`, con versión y auditoría.
-- La formalización exige presupuesto, fuente de donaciones identificada, responsable, contratista y actividades. La reserva monetaria es transaccional y tiene concurrencia por desastre.
-- Confirmar formalización inicia monitoreo. Registrar contrato firmado es opcional. Después se modifica presupuesto mediante una revisión motivada, incluyendo redistribución de actividades, sin borrar reportes.
-- Los costos de reportes son incrementales, con dos decimales. Se exige revisar y ampliar el presupuesto de la actividad antes de registrar un costo que lo exceda.
-- Cada solicitud de reporte lleva un UUID `requestId`, conservado durante reintentos. Repetirlo con el mismo contenido no duplica costos; cambiar contenido produce 409.
-- Todos los reportes requieren evidencia y documentación. Los adjuntos se almacenan fuera de wwwroot, vinculados al proyecto, con tipo comprobado y hash SHA-256. Se aceptan PDF, PNG y JPEG, hasta 20 MB. Las referencias libres solo se permiten con datos de demostración.
-- Cerrar exige actividades terminadas y reportes finales completos. El consolidado conserva todos los reportes. Se libera el saldo no ejecutado; el costo ejecutado permanece comprometido.
-- La auditoría conserva datos del evento y capturas anterior/posterior del proyecto. Los cambios previos a esta versión que no fueron auditados no pueden reconstruirse retroactivamente.
+El modo de demostración utiliza una identidad local y datos simulados de evaluación de daños y donaciones. Fuera de este modo, se requiere configurar los servicios externos y el proveedor de identidad.
+
+Endpoints de diagnóstico:
+
+- `/api/reconstruccion/health`
+- `/api/reconstruccion/ready`
 
 ## Integración
 
-Consulte [contratos](docs/integracion.md) y [arquitectura](docs/arquitectura.md). Evaluaciones, donaciones e identidad aún no existen en los repositorios compartidos: sus adaptadores son reales, pero la interoperabilidad se valida con servicios HTTP de prueba.
+La comunicación con Desastres, Evaluación de Daños y Donaciones se realiza mediante adaptadores REST. Los contratos externos se mantienen separados del dominio, evitando dependencias directas entre los modelos de negocio de cada módulo.
 
-Android utiliza `BuildConfig.API_BASE_URL`, por defecto `http://10.0.2.2:5080/api/`. Puede configurarse con `-PAPI_BASE_URL=http://IP_DEL_SERVIDOR:5080/api/`. El backend conserva el radio enviado por Android. El registro preliminar de desastres mantiene el acceso anónimo del contrato anterior; los comandos de reconstrucción requieren permisos.
+Los adaptadores de Evaluación de Daños y Donaciones se validan actualmente mediante servicios HTTP de prueba, mientras se completa la integración con los módulos correspondientes.
+
+El backend conserva la compatibilidad con el cliente Android, incluyendo el registro y la sincronización de desastres en modo desconectado.
+
+La dirección del servidor móvil puede configurarse mediante:
+
+```bash
+-PAPI_BASE_URL=http://IP_DEL_SERVIDOR:5080/api/
+```
+
+Ver [contratos de integración](docs/integracion.md) y [documentación de arquitectura](docs/arquitectura.md).
 
 ## Seguridad
 
-Variables: `Security__Authority` (emisor OIDC por HTTPS), `Security__Audience`. JWT valida firma, emisor, destinatario y vigencia. Claims requeridos: `sub`, `organization_id`, `role` y un `disaster_id` por desastre autorizado. Roles `reconstruction.read` y `reconstruction.write`. El emisor debe verificar la pertenencia a la organización antes de conceder los desastres. Nunca se confía en X-Actor.
+Los servicios de Reconstrucción utilizan autenticación JWT y autorización mediante roles y acceso por desastre. El proveedor de identidad se configura mediante las variables:
 
-El acceso web actual permite suministrar el token emitido por la organización, en `/access.html`; no implementa un proveedor de identidad ni su pantalla de autenticación. El token se conserva únicamente en la sesión del navegador. La integración de inicio de sesión OIDC depende del proveedor elegido.
+- `Security__Authority`
+- `Security__Audience`
 
-`Security__LocalDemo=true` solo funciona en Development y muestra una advertencia visible. No hay contraseñas, claves JWT ni credenciales financieras incorporadas. RabbitMQ usa credenciales locales de desarrollo; despliegues deben reemplazarlas por configuración segura.
+Las evidencias y documentos se almacenan fuera del directorio público, asociados a su proyecto y con verificación de integridad mediante SHA-256.
 
-Los adjuntos locales son un adaptador de almacenamiento: antes de un despliegue distribuido se debe usar almacenamiento compartido y definir retención, copias de seguridad y análisis antivirus. El hash detecta alteraciones; no certifica la veracidad de un documento.
-
-## Validación
+## Pruebas
 
 ```bash
 dotnet test DisasterLocation.sln
@@ -56,8 +144,12 @@ python3 scripts/finalization_e2e.py
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
-Las pruebas usan bases y puertos temporales; mensajería utiliza su propio vhost y no detiene el broker compartido. Compilar antes de ejecutar los scripts. `reconstruction_e2e.py` requiere una demostración local ya iniciada.
+Las pruebas cubren reglas de negocio, persistencia, concurrencia, seguridad, integración HTTP y comunicación asíncrona. Los scripts utilizan bases de datos y puertos temporales para aislar su ejecución.
 
-Las migraciones conservan datos y mantienen historiales separados por contexto. La migración de agrupación conserva propuestas antiguas duplicadas como obsoletas para reconciliarlas. Los mensajes históricos admiten las antiguas categorías de daño solo en lectura. El importador `consolidate_databases.py` se limita al esquema inicial de dos bases separadas y rechaza esquemas posteriores para evitar pérdidas: no es un importador universal.
+## Trabajo futuro
 
-SQLite compartida y workers dentro de la API son decisiones de desarrollo. Esta entrega no acredita alta disponibilidad ni 10.000 usuarios concurrentes. No se publicaron repositorios ni servicios.
+- Integración con los módulos de Evaluación de Daños, Donaciones e Identidad.
+- Migración a un motor de base de datos adecuado para despliegues distribuidos.
+- Almacenamiento compartido de evidencias y documentos.
+- Redundancia de componentes y validación de los escenarios de alta disponibilidad.
+- Pruebas de carga para los escenarios de escalabilidad establecidos en los requisitos del sistema.
