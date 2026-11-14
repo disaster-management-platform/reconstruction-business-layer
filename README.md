@@ -1,6 +1,6 @@
 # Reconstrucción
 
-Implementación .NET 10 con dominio, casos de uso, puertos, adaptadores HTTP, EF Core/SQLite, gateway YARP y RabbitMQ. Incluye el backend de desastres compatible con Android. Los originales recibidos permanecen intactos.
+Implementación .NET 10 con dominio, casos de uso, puertos, adaptadores HTTP, EF Core/SQLite, gateway YARP y RabbitMQ. Incluye el backend de desastres compatible con Android.
 ![arquitectura.png](docs/arquitectura.png)
 ## Ejecutar
 
