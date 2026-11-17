@@ -105,10 +105,10 @@ public sealed class MessagingTests : IDisposable
     {
         await using var provider = Services(); await provider.InitializePlatformDalAsync();
         await using var scope = provider.CreateAsyncScope();
-        var project = ProjectMonitoringDomainTests.Project(); var activity = project.Activities.First();
+        var proposal = Proposal(); var project = ProjectMonitoringDomainTests.Project(proposal: proposal); var activity = project.Activities.First();
         var reportId = project.RegisterProgress(activity.Id, ActivityStatus.Completed, 10m, ["foto"], ["acta"], "operador");
         var db = scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
-        db.Projects.Add(project); await db.SaveChangesAsync();
+        db.AddRange(proposal, project); await db.SaveChangesAsync();
         var handler = scope.ServiceProvider.GetRequiredService<ClosureEventHandler>();
         await Assert.ThrowsAsync<DomainException>(() => handler.HandleAsync(Typed(
             new ActivityCompletedEvent(project.Id, activity.Id, reportId, 999m, project.Version), project.Id), default));
@@ -120,10 +120,10 @@ public sealed class MessagingTests : IDisposable
     {
         await using var provider = Services(); await provider.InitializePlatformDalAsync();
         await using var scope = provider.CreateAsyncScope();
-        var project = new ReconstructionProject(Proposal());
+        var proposal = Proposal(); var project = new ReconstructionProject(proposal);
         project.SaveFormalization(100m, "Aportes", "Responsable", "Contratista", [ProjectFormalizationDomainTests.Activity()]);
         var db = scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
-        db.Projects.Add(project); await db.SaveChangesAsync();
+        db.AddRange(proposal, project); await db.SaveChangesAsync();
         await scope.ServiceProvider.GetRequiredService<MonitoringEventHandler>().HandleAsync(Event("reconstruction.project.formalized", project.Id), default);
         var task = Assert.Single(await scope.ServiceProvider.GetRequiredService<WorkflowService>().ListAsync(1, project.Id, default));
         Assert.Equal(WorkflowKind.FormalizationRequest, task.Kind);
@@ -136,9 +136,9 @@ public sealed class MessagingTests : IDisposable
     {
         await using var provider = Services(); await provider.InitializePlatformDalAsync();
         await using var scope = provider.CreateAsyncScope();
-        var project = ProjectMonitoringDomainTests.Project(); var activity = project.Activities.First();
+        var proposal = Proposal(); var project = ProjectMonitoringDomainTests.Project(proposal: proposal); var activity = project.Activities.First();
         var db = scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
-        db.Projects.Add(project); await db.SaveChangesAsync();
+        db.AddRange(proposal, project); await db.SaveChangesAsync();
         var saved = await scope.ServiceProvider.GetRequiredService<ProjectMonitoringService>().ReportAsync(project.Id, activity.Id,
             new RegisterProgressRequest(ActivityStatus.Completed, 12.34m, ["foto"], ["acta"], project.Version), "operador", default);
         var envelope = JsonSerializer.Deserialize<EventEnvelope>((await db.OutboxMessages.SingleAsync()).PayloadJson)!;
@@ -153,10 +153,10 @@ public sealed class MessagingTests : IDisposable
     {
         await using var provider = Services(); await provider.InitializePlatformDalAsync();
         await using var scope = provider.CreateAsyncScope();
-        var project = ProjectMonitoringDomainTests.Project(); var activity = project.Activities.First();
+        var proposal = Proposal(); var project = ProjectMonitoringDomainTests.Project(proposal: proposal); var activity = project.Activities.First();
         var reportId = project.RegisterProgress(activity.Id, ActivityStatus.Completed, 0m, ["foto"], ["acta"], "operador");
         var db = scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
-        db.Projects.Add(project); await db.SaveChangesAsync();
+        db.AddRange(proposal, project); await db.SaveChangesAsync();
         var envelope = Event("reconstruction.activity.completed", project.Id) with
         {
             Data = EventPayloadJson.Serialize(new { ProjectId = project.Id, ActivityId = activity.Id, ReportId = reportId, ProjectVersion = project.Version })

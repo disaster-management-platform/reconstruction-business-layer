@@ -15,9 +15,9 @@ namespace Reconstruction.Tests;
 
 public sealed class ProjectMonitoringDomainTests
 {
-    internal static ReconstructionProject Project(ActivityStatus state = ActivityStatus.Pending)
+    internal static ReconstructionProject Project(ActivityStatus state = ActivityStatus.Pending, ReconstructionProposal? proposal = null)
     {
-        var proposal = new ReconstructionProposal(1, "Zona", "Puente", DamageLevel.Severe, 1, 200m, ProposalPriority.Unassigned);
+        proposal ??= new ReconstructionProposal(1, "Zona", "Puente", DamageLevel.Severe, 1, 200m, ProposalPriority.Unassigned);
         var project = new ReconstructionProject(proposal);
         project.SaveFormalization(200m, "Aportes", "Responsable", "Contratista",
             [new("Reparar estructura", "Equipo", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(5), 100m),
@@ -127,12 +127,13 @@ public sealed class ProjectMonitoringPersistenceTests : IDisposable
     private async Task<(ServiceProvider Provider, Guid Id)> SeedAsync()
     {
         var services = new ServiceCollection().AddPlatformDal(_database.ConnectionString);
-        services.AddSingleton<IReportAttachmentVerifier, TestAttachments>();
         services.AddSingleton<IReportAttachmentVerifier, TestAttachments>().AddScoped<ProjectMonitoringService>();
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         await provider.InitializePlatformDalAsync();
-        var project = ProjectMonitoringDomainTests.Project();
+        var proposal = new ReconstructionProposal(1, "Zona", "Puente", DamageLevel.Severe, 1, 200m, ProposalPriority.Unassigned);
+        var project = ProjectMonitoringDomainTests.Project(proposal: proposal);
         await using var scope = provider.CreateAsyncScope();
+        scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>().Proposals.Add(proposal);
         scope.ServiceProvider.GetRequiredService<IProjectRepository>().Add(project);
         await scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>().SaveChangesAsync();
         return (provider, project.Id);

@@ -15,9 +15,9 @@ namespace Reconstruction.Tests;
 
 public sealed class ProjectClosureDomainTests
 {
-    internal static ReconstructionProject Project(ActivityStatus first = ActivityStatus.Pending, ActivityStatus second = ActivityStatus.Pending)
+    internal static ReconstructionProject Project(ActivityStatus first = ActivityStatus.Pending, ActivityStatus second = ActivityStatus.Pending, ReconstructionProposal? proposal = null)
     {
-        var proposal = new ReconstructionProposal(1, "Zona", "Puente", DamageLevel.Severe, 1, 200m, ProposalPriority.Unassigned);
+        proposal ??= new ReconstructionProposal(1, "Zona", "Puente", DamageLevel.Severe, 1, 200m, ProposalPriority.Unassigned);
         var project = new ReconstructionProject(proposal);
         var start = DateTimeOffset.UtcNow;
         project.SaveFormalization(200m, "Aportes", "Responsable", "Contratista",
@@ -85,15 +85,16 @@ public sealed class ProjectClosurePersistenceTests : IDisposable
     private async Task<(ServiceProvider Provider, Guid Id)> SeedAsync(bool completed = false, bool withReports = false)
     {
         var services = new ServiceCollection().AddPlatformDal(_database.ConnectionString);
-        services.AddSingleton<IReportAttachmentVerifier, TestAttachments>();
         services.AddSingleton<IReportAttachmentVerifier, TestAttachments>().AddScoped<ProjectMonitoringService>(); services.AddScoped<ProjectClosureService>();
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
         await provider.InitializePlatformDalAsync();
-        var project = completed ? ProjectClosureDomainTests.Project(ActivityStatus.Completed, ActivityStatus.Completed) : ProjectClosureDomainTests.Project();
+        var proposal = new ReconstructionProposal(1, "Zona", "Puente", DamageLevel.Severe, 1, 200m, ProposalPriority.Unassigned);
+        var project = completed ? ProjectClosureDomainTests.Project(ActivityStatus.Completed, ActivityStatus.Completed, proposal) : ProjectClosureDomainTests.Project(proposal: proposal);
         if (withReports)
             foreach (var activity in project.Activities)
                 project.RegisterProgress(activity.Id, ActivityStatus.Completed, 0m, ["foto"], ["acta"], "operador");
         await using var scope = provider.CreateAsyncScope();
+        scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>().Proposals.Add(proposal);
         scope.ServiceProvider.GetRequiredService<IProjectRepository>().Add(project);
         await scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>().SaveChangesAsync();
         return (provider, project.Id);

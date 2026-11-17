@@ -1,5 +1,7 @@
 using DisasterLocation.Core;
 using Npgsql;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Platform.DAL;
@@ -153,11 +155,12 @@ public sealed class PlatformPersistenceTests : IDisposable
     public async Task PublishedLifecycleTimestampsMatchPersistedProjectTimestamps()
     {
         await using var services = Services(); await InitializeAsync(services);
-        var project = ProjectMonitoringDomainTests.Project();
+        var proposal = new ReconstructionProposal(1, "Zona", "Puente", DamageLevel.Severe, 1, 200m, ProposalPriority.Unassigned);
+        var project = ProjectMonitoringDomainTests.Project(proposal: proposal);
         await using (var scope = services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
-            db.Projects.Add(project);
+            db.AddRange(proposal, project);
             var work = scope.ServiceProvider.GetRequiredService<IReconstructionUnitOfWork>();
             await work.CommitAsync(IntegrationEvent.Typed(1, project.Id, "operador", new ProjectFormalizedEvent(project.Id,
                 project.Version, project.FinalBudget, project.SignedContractReference, project.ContractSignedAt,
@@ -205,6 +208,61 @@ public sealed class PlatformPersistenceTests : IDisposable
             new PostgresException("unknown unique", "ERROR", "ERROR", "23505", schemaName: "reconstruction", constraintName: "unexpected"),
             new PostgresException("other domain", "ERROR", "ERROR", "23505", schemaName: "disasters", constraintName: "PK_InboxMessages") })
             Assert.False(PlatformDatabase.IsConflict(new DbUpdateException("save", error)));
+    }
+
+    [Fact]
+    public async Task IncrementalAuditConstraintPreservesHistoryAndRejectsOrphansAndParentDeletion()
+    {
+        await using var services = Services();
+        await using var scope = services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DisasterDbContext>();
+        await db.GetService<IMigrator>().MigrateAsync("20261117163129_PostgreSqlDisasters");
+        var disaster = new Disaster { Nombre = "Reporte", Ubicacion = "Bogotá", Severidad = 4,
+            Descripcion = "Conservar", Latitud = 4.71, Longitud = -74.07 };
+        db.Disasters.Add(disaster); await db.SaveChangesAsync();
+        Assert.True(await scope.ServiceProvider.GetRequiredService<IDisasterRepository>().ChangePhaseAsync(disaster.Id,
+            DisasterPhase.Registered, DisasterPhase.Response, 1, "operador", default));
+        await db.Database.MigrateAsync(); db.ChangeTracker.Clear();
+        Assert.Equal(disaster.Id, (await db.PhaseAudit.SingleAsync()).DisasterId);
+        Assert.Equal(2, (await db.Disasters.SingleAsync()).Version);
+        db.ChangeTracker.Clear();
+        db.Disasters.Remove(await db.Disasters.SingleAsync());
+        var deletion = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, Assert.IsType<PostgresException>(deletion.InnerException).SqlState);
+        db.ChangeTracker.Clear();
+        db.PhaseAudit.Add(new DisasterPhaseAudit { Id = Guid.NewGuid(), DisasterId = int.MaxValue, Actor = "operador",
+            Before = DisasterPhase.Registered, After = DisasterPhase.Response, Version = 2, OccurredAt = DateTimeOffset.UtcNow });
+        var orphan = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, Assert.IsType<PostgresException>(orphan.InnerException).SqlState);
+        db.ChangeTracker.Clear();
+        Assert.Equal(1, await db.Disasters.CountAsync()); Assert.Equal(1, await db.PhaseAudit.CountAsync());
+        Assert.Equal(db.Database.GetMigrations(), await db.Database.GetAppliedMigrationsAsync());
+    }
+
+    [Fact]
+    public async Task IncrementalProposalConstraintPreservesProjectsAndRejectsOrphansAndParentDeletion()
+    {
+        await using var services = Services();
+        await using var scope = services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
+        await db.GetService<IMigrator>().MigrateAsync("20261117163132_PostgreSqlReconstruction");
+        var proposal = new ReconstructionProposal(1, "Zona", "Puente", DamageLevel.Severe, 1, 100m, ProposalPriority.High);
+        var project = new ReconstructionProject(proposal); proposal.Select();
+        db.AddRange(proposal, project); await db.SaveChangesAsync();
+        await db.Database.MigrateAsync(); db.ChangeTracker.Clear();
+        Assert.Equal(proposal.Id, (await db.Projects.SingleAsync()).ProposalId);
+        db.ChangeTracker.Clear();
+        db.Proposals.Remove(await db.Proposals.SingleAsync());
+        var deletion = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, Assert.IsType<PostgresException>(deletion.InnerException).SqlState);
+        db.ChangeTracker.Clear();
+        db.Projects.Add(new ReconstructionProject(new ReconstructionProposal(1, "Otra zona", "Puente",
+            DamageLevel.Severe, 1, 100m, ProposalPriority.High)));
+        var orphan = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, Assert.IsType<PostgresException>(orphan.InnerException).SqlState);
+        db.ChangeTracker.Clear();
+        Assert.Equal(project.Id, (await db.Projects.SingleAsync()).Id); Assert.Equal(1, await db.Proposals.CountAsync());
+        Assert.Equal(db.Database.GetMigrations(), await db.Database.GetAppliedMigrationsAsync());
     }
 
     [Fact]

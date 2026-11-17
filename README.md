@@ -14,7 +14,7 @@ El sistema sigue una arquitectura orientada a servicios con arquitectura hexagon
 - **Domain:** entidades, estados, políticas y reglas de negocio.
 - **Application:** servicios de negocio, casos de uso e interfaces de comunicación.
 - **Infrastructure:** adaptadores HTTP, mensajería y almacenamiento de archivos.
-- **DAL:** capa de acceso a datos centralizada mediante Entity Framework Core y SQLite. Los módulos comparten una base de datos, pero mantienen sus propios repositorios y contextos.
+- **DAL:** `DisasterPlatform.DAL 2.0.1`, con Entity Framework Core y PostgreSQL. Los esquemas `disasters` y `reconstruction` mantienen sus propios repositorios y contextos.
 - **API Gateway:** implementado con YARP para centralizar el acceso a los módulos y servir la interfaz web.
 
 El patrón Facade proporciona un punto de acceso a los servicios de Reconstrucción. La colaboración asíncrona se realiza mediante RabbitMQ, utilizando eventos tipados y colas independientes por consumidor.
@@ -74,7 +74,7 @@ Se genera un reporte consolidado de la ejecución y se libera el presupuesto no 
 | Componente | Tecnología |
 |---|---|
 | Backend | .NET 10 / ASP.NET Core |
-| Persistencia | Entity Framework Core / SQLite |
+| Persistencia | Entity Framework Core / PostgreSQL |
 | API Gateway | YARP |
 | MOM | RabbitMQ / AMQP |
 | Integración | REST / JSON |
@@ -84,15 +84,39 @@ Se genera un reporte consolidado de la ejecución y se libera el presupuesto no 
 
 ## Ejecución
 
-Compilar la solución e iniciar el entorno local:
+Se requiere .NET 10 y autenticación NuGet para GitHub Packages. Configura las conexiones desde archivos locales protegidos fuera de Git. Cada archivo debe contener una cadena Npgsql con usuario propio, `SSL Mode=VerifyFull` y la CA confiable para conexiones TCP:
 
 ```bash
+export DISASTERS_CONNECTION_STRING="$(cat "$DISASTERS_CONNECTION_FILE")"
+export RECONSTRUCTION_CONNECTION_STRING="$(cat "$RECONSTRUCTION_CONNECTION_FILE")"
+```
+
+`DISASTERS_CONNECTION_FILE` corresponde a la API ampliada; `RECONSTRUCTION_CONNECTION_FILE`, a Reconstrucción. `run_local.py` entrega cada valor como `ConnectionStrings__Disasters` exclusivamente a su proceso. No transmite conexiones PostgreSQL al Gateway ni utiliza la conexión genérica heredada como sustituto.
+
+Compilar la solución y el Gateway:
+
+```bash
+dotnet restore DisasterLocation.sln
 dotnet build DisasterLocation.sln
 dotnet build ../disaster-api-gateway/DisasterLocation.Gateway.sln
-python3 scripts/run_local.py --demo
 ```
 
 Interfaz web: http://localhost:5080
+
+Las migraciones se aplican explícitamente antes de ejecutar los servicios, con un archivo administrativo separado en `MIGRATION_CONNECTION_FILE`:
+
+```bash
+ConnectionStrings__Disasters="$(cat "$MIGRATION_CONNECTION_FILE")" \
+  dotnet run --project DisasterLocation --no-launch-profile -- --Database:Migrate=true
+```
+
+Iniciar los procesos con sus credenciales de ejecución:
+
+```bash
+python3 scripts/run_local.py --demo
+```
+
+El arranque normal de ambas APIs no aplica migraciones. No utilices la conexión administrativa en las variables de ejecución. En Supabase, ambas APIs de desastres conservan permisos de solo lectura hasta decidir el propietario de escritura; `--demo` no cambia esos permisos. Las dos migraciones incrementales `ProtectDisastersReferences` y `ProtectReconstructionReferences` están pendientes de aplicación en Supabase.
 
 Para habilitar la comunicación mediante RabbitMQ:
 
@@ -135,7 +159,11 @@ Las evidencias y documentos se almacenan fuera del directorio público, asociado
 
 ## Pruebas
 
+Se requieren `psycopg2` y un PostgreSQL local por socket Unix con permiso para crear bases. Con `PGSOCKET` apuntando a ese directorio:
+
 ```bash
+export TEST_POSTGRES_DSN="host=${PGSOCKET:?Configura el socket PostgreSQL local} port=5432 dbname=postgres user=$(id -un)"
+export TEST_POSTGRES_CONNECTION="Host=$PGSOCKET;Port=5432;Database=postgres;Username=$(id -un)"
 dotnet test DisasterLocation.sln
 python3 scripts/platform_e2e.py
 python3 scripts/messaging_e2e.py
@@ -145,12 +173,12 @@ python3 scripts/finalization_e2e.py
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
-Las pruebas cubren reglas de negocio, persistencia, concurrencia, seguridad, integración HTTP y comunicación asíncrona. Los scripts utilizan bases de datos y puertos temporales para aislar su ejecución.
+Las pruebas cubren reglas de negocio, persistencia, concurrencia, seguridad, integración HTTP y comunicación asíncrona. Los scripts crean bases PostgreSQL y puertos temporales, aplican las migraciones antes del arranque y eliminan únicamente sus recursos. Las pruebas destructivas rechazan conexiones remotas. La suite completa del Gateway se ejecuta con `python3 ../disaster-api-gateway/scripts/test_gateway.py`. Las cuatro pruebas de `test_consolidate_databases.py` verifican actualmente inicialización e integridad PostgreSQL; la herramienta histórica de transferencia SQLite fue retirada. `messaging_e2e.py` requiere el broker disponible y crea un virtual host de prueba propio.
 
 ## Trabajo futuro
 
 - Integración con los módulos de Evaluación de Daños, Donaciones e Identidad.
-- Migración a un motor de base de datos adecuado para despliegues distribuidos.
+- Decisión sobre el propietario de escritura de Gestión de Desastres y la integridad adicional entre esquemas.
 - Almacenamiento compartido de evidencias y documentos.
 - Redundancia de componentes y validación de los escenarios de alta disponibilidad.
 - Pruebas de carga para los escenarios de escalabilidad establecidos en los requisitos del sistema.
