@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Reconstruction.Application;
 using Reconstruction.Application.Ports;
@@ -19,7 +21,7 @@ public sealed class DisasterHttpReaderTests
         services.AddReconstruction(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["ExternalApis:Disasters"] = "http://disasters.test/"
-        }).Build());
+        }).Build(), new HostingEnvironment { EnvironmentName = Environments.Production });
         Assert.DoesNotContain(services, d => d.ServiceType == typeof(IProposalRepository));
         Assert.DoesNotContain(services, d => d.ServiceType == typeof(DisasterLocation.Core.IDisasterRepository));
         using var provider = services.BuildServiceProvider();
@@ -50,14 +52,24 @@ public sealed class DisasterHttpReaderTests
         await Assert.ThrowsAsync<DependencyUnavailableException>(() => new DisasterHttpReader(client, DisasterHttpResilience.Create()).GetAsync(42, default));
     }
 
-    private sealed class StubHandler(HttpStatusCode status, int severity = 4) : HttpMessageHandler
+    [Theory]
+    [InlineData("999")]
+    [InlineData("-1")]
+    [InlineData("UndefinedPhase")]
+    public async Task RejectsUndefinedDisasterPhases(string phase)
+    {
+        using var client = new HttpClient(new StubHandler(HttpStatusCode.OK, phase: phase)) { BaseAddress = new Uri("http://disasters.test/") };
+        await Assert.ThrowsAsync<DependencyUnavailableException>(() => new DisasterHttpReader(client, DisasterHttpResilience.Create()).GetAsync(42, default));
+    }
+
+    private sealed class StubHandler(HttpStatusCode status, int severity = 4, string phase = "Recovery") : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Assert.Equal("http://disasters.test/api/desastres/42", request.RequestUri!.ToString());
             return Task.FromResult(new HttpResponseMessage(status)
             {
-                Content = JsonContent.Create(new { id = 42, severidad = severity, phase = "Recovery" })
+                Content = JsonContent.Create(new { id = 42, severidad = severity, phase })
             });
         }
     }

@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.Internal;
 using Reconstruction.Application;
 using Reconstruction.Domain;
 using Reconstruction.Infrastructure.ExternalAdapters;
@@ -44,7 +46,7 @@ public sealed class ExternalModuleTests
         try
         {
             var store = new FileAttachmentStore(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-                { ["Attachments:Directory"] = folder }).Build());
+                { ["Attachments:Directory"] = folder }).Build(), new HostingEnvironment { EnvironmentName = Environments.Production });
             var project = Guid.NewGuid();
             using var pdf = new MemoryStream("%PDF-1.4\nTest"u8.ToArray());
             var evidence = await store.SaveAsync(project, "foto.pdf", "application/pdf", "evidence", pdf, default);

@@ -26,17 +26,18 @@ public sealed class HttpSecurityTests : IDisposable
 {
     private readonly PostgresDatabase _database = new();
     private static readonly SymmetricSecurityKey Key = new(Encoding.UTF8.GetBytes("test-only-key-never-for-deployment-0123456789-abcdefghijklmnopqrstuv"));
-    private WebApplicationFactory<Program> App()
+    private WebApplicationFactory<Program> App(string environment = "Development")
     {
         Platform.DAL.PlatformDatabase.MigrateAsync(_database.ConnectionString).GetAwaiter().GetResult();
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            builder.UseEnvironment("Testing");
+            builder.UseEnvironment(environment);
+            builder.UseSetting("Reconstruction:DemoExternalData", "true");
             builder.UseSetting("ConnectionStrings:Disasters", _database.ConnectionString);
             builder.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Disasters"] = _database.ConnectionString,
-                ["Messaging:Enabled"] = "false", ["Reconstruction:DemoExternalData"] = "true",
+                ["Messaging:Enabled"] = "false",
                 ["Security:LocalDemo"] = "false", ["Security:Authority"] = "https://identity.test", ["Security:Audience"] = "platform"
             }));
             builder.ConfigureServices(services =>
@@ -56,6 +57,31 @@ public sealed class HttpSecurityTests : IDisposable
             });
         });
     }
+    [Theory]
+    [InlineData("Production")]
+    [InlineData("Staging")]
+    [InlineData("Testing")]
+    public void DemoExternalDataIsRejectedOutsideDevelopment(string environment)
+    {
+        using var app = App(environment);
+        var error = Assert.Throws<InvalidOperationException>(() => app.CreateClient());
+        Assert.Contains("Reconstruction:DemoExternalData", error.Message);
+    }
+
+    [Theory]
+    [InlineData("Development", true)]
+    [InlineData("Production", false)]
+    public async Task DemoAttachmentReferencesRequireDevelopment(string environment, bool accepted)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            { ["Reconstruction:DemoExternalData"] = "true" }).Build();
+        var store = new Reconstruction.Infrastructure.ExternalAdapters.FileAttachmentStore(configuration,
+            new Microsoft.Extensions.Hosting.Internal.HostingEnvironment { EnvironmentName = environment });
+        var operation = () => store.VerifyAsync(Guid.NewGuid(), ["demo-evidence"], ["demo-document"], default);
+        if (accepted) await operation();
+        else await Assert.ThrowsAsync<DomainException>(operation);
+    }
+
     private static void Authenticate(HttpClient client, string role = "reconstruction.read", int disasterId = 1, bool expired = false, bool localDemoClaim = false)
     {
         var now = DateTime.UtcNow;

@@ -23,9 +23,9 @@ public sealed class DisasterHttpReader(HttpClient client, ResiliencePipeline<Dis
                 if (response.StatusCode == HttpStatusCode.NotFound) return null;
                 response.EnsureSuccessStatusCode();
                 var disaster = await response.Content.ReadFromJsonAsync<DisasterResponse>(token);
-                if (disaster is null || disaster.Id != disasterId || disaster.Severidad < 1 || disaster.Severidad > 5 || !Enum.TryParse<DisasterPhase>(disaster.Phase, out _))
+                if (disaster is null || disaster.Id != disasterId || disaster.Severidad < 1 || disaster.Severidad > 5 || (!Enum.TryParse<DisasterPhase>(disaster.Phase, out var phase) || !Enum.IsDefined(phase)))
                     throw new JsonException("Respuesta de desastre inválida.");
-                return new DisasterSnapshot(disaster.Id, disaster.Severidad, Enum.Parse<DisasterPhase>(disaster.Phase));
+                return new DisasterSnapshot(disaster.Id, disaster.Severidad, phase);
             }, ct);
         }
         catch (BrokenCircuitException ex)

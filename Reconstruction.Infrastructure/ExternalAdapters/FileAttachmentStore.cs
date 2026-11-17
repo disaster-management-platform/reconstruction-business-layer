@@ -1,12 +1,13 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Reconstruction.Application.Ports;
 using Reconstruction.Domain;
 
 namespace Reconstruction.Infrastructure.ExternalAdapters;
 
-public sealed class FileAttachmentStore(IConfiguration configuration) : IAttachmentStore
+public sealed class FileAttachmentStore(IConfiguration configuration, IHostEnvironment environment) : IAttachmentStore
 {
     public const long MaximumLength = 20 * 1024 * 1024;
     private string Root => Path.GetFullPath(configuration["Attachments:Directory"] ?? "App_Data/attachments");
@@ -67,7 +68,7 @@ public sealed class FileAttachmentStore(IConfiguration configuration) : IAttachm
             if (reference is null || !reference.StartsWith("attachment:", StringComparison.Ordinal)
                 || !Guid.TryParse(reference[11..], out var id))
             {
-                if (configuration.GetValue<bool>("Reconstruction:DemoExternalData") && !string.IsNullOrWhiteSpace(reference)) continue;
+                if (environment.IsDevelopment() && configuration.GetValue<bool>("Reconstruction:DemoExternalData") && !string.IsNullOrWhiteSpace(reference)) continue;
                 throw new DomainException("Adjunte los soportes al proyecto antes de registrar el reporte.");
             }
             var file = await OpenAsync(projectId, id, ct);

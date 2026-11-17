@@ -17,7 +17,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddReconstructionDataAccess(builder.Configuration.GetConnectionString("Disasters")
     ?? throw new InvalidOperationException("Configure ConnectionStrings:Disasters para PostgreSQL."));
-builder.Services.AddReconstruction(builder.Configuration);
+builder.Services.AddReconstruction(builder.Configuration, builder.Environment);
 builder.Services.AddPlatformSecurity(builder.Configuration, builder.Environment);
 
 var app = builder.Build();

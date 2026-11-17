@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Reconstruction.Application.Facade;
 using Reconstruction.Application.Ports;
 using Reconstruction.Application.Services;
@@ -26,8 +27,10 @@ public static class DependencyInjection
     }
 
     public static IServiceCollection AddReconstruction(this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration, IHostEnvironment environment)
     {
+        if (configuration.GetValue<bool>("Reconstruction:DemoExternalData") && !environment.IsDevelopment())
+            throw new InvalidOperationException("Reconstruction:DemoExternalData solo está permitido en Development.");
         services.AddScoped<ProposalDefinitionService>();
         services.AddScoped<FundingService>();
         services.AddScoped<ProposalReconciliationService>();

@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Polly;
 using Polly.CircuitBreaker;
@@ -117,7 +119,7 @@ public sealed class DisasterCircuitBreakerTests
         services.AddReconstruction(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["ExternalApis:Disasters"] = "http://disasters.test/"
-        }).Build());
+        }).Build(), new HostingEnvironment { EnvironmentName = Environments.Production });
         services.AddSingleton<ResiliencePipeline<DisasterSnapshot?>>(_ => DisasterHttpResilience.Create(clock));
         services.AddHttpClient<IDisasterReader, DisasterHttpReader>()
             .ConfigureHttpClient(client => Assert.Equal(TimeSpan.FromSeconds(4), client.Timeout))
