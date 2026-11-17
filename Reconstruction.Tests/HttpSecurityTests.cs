@@ -57,12 +57,14 @@ public sealed class HttpSecurityTests : IDisposable
             });
         });
     }
-    private static void Authenticate(HttpClient client, string role = "reconstruction.read", int disasterId = 1, bool expired = false)
+    private static void Authenticate(HttpClient client, string role = "reconstruction.read", int disasterId = 1, bool expired = false, bool localDemoClaim = false)
     {
         var now = DateTime.UtcNow;
-        var token = new JwtSecurityToken("https://identity.test", "platform", new[] {
+        var claims = new List<Claim> {
             new Claim("sub", "authenticated-operator"), new Claim("organization_id", "organization-a"),
-            new Claim("role", role), new Claim("disaster_id", disasterId.ToString()) },
+            new Claim("role", role), new Claim("disaster_id", disasterId.ToString()) };
+        if (localDemoClaim) claims.Add(new Claim("local_demo", "true"));
+        var token = new JwtSecurityToken("https://identity.test", "platform", claims,
             now.AddHours(-2), expired ? now.AddHours(-1) : now.AddHours(1), new SigningCredentials(Key, SecurityAlgorithms.HmacSha256));
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", new JwtSecurityTokenHandler().WriteToken(token));
     }
@@ -79,8 +81,10 @@ public sealed class HttpSecurityTests : IDisposable
         Authenticate(client, "reconstruction.write");
         Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync("/api/reconstruccion/propuestas/generar", new { disasterId = 2 })).StatusCode);
     }
-    [Fact]
-    public async Task ProjectListsAndDirectReadsAreScopedToTheDisastersGrantedByTheIssuer()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProjectListsAndDirectReadsAreScopedToTheDisastersGrantedByTheIssuer(bool localDemoClaim)
     {
         await using var app = App(); using var client = app.CreateClient();
         Guid hidden;
@@ -92,10 +96,12 @@ public sealed class HttpSecurityTests : IDisposable
             var first = new ReconstructionProject(a); var second = new ReconstructionProject(b); hidden = second.Id;
             db.AddRange(a, b, first, second); await db.SaveChangesAsync();
         }
-        Authenticate(client);
+        Authenticate(client, localDemoClaim: localDemoClaim);
         var visible = await client.GetFromJsonAsync<System.Text.Json.JsonElement>("/api/reconstruccion/proyectos");
         Assert.Equal(1, visible.GetArrayLength());
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/reconstruccion/proyectos/{hidden}")).StatusCode);
+        Authenticate(client, "reconstruction.write", localDemoClaim: localDemoClaim);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync("/api/reconstruccion/propuestas/generar", new { disasterId = 2 })).StatusCode);
     }
     public void Dispose() { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); if (Directory.Exists(_folder)) Directory.Delete(_folder, true); }
 }

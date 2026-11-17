@@ -22,7 +22,8 @@ public static class PlatformSecurity
         if (localDemo && !environment.IsDevelopment())
             throw new InvalidOperationException("Security:LocalDemo solo está permitido en Development.");
         services.AddHttpContextAccessor();
-        services.AddScoped<IDisasterAccess, ClaimsDisasterAccess>();
+        services.AddScoped<IDisasterAccess>(provider =>
+            new ClaimsDisasterAccess(provider.GetRequiredService<IHttpContextAccessor>(), localDemo));
         var auth = services.AddAuthentication(localDemo ? "LocalDemo" : JwtBearerDefaults.AuthenticationScheme);
         if (localDemo) auth.AddScheme<AuthenticationSchemeOptions, LocalDemoAuthentication>("LocalDemo", _ => { });
         else auth.AddJwtBearer(options =>
@@ -50,14 +51,14 @@ public static class PlatformSecurity
         ?? throw new InvalidOperationException("No se encontró la identidad autenticada.");
 }
 
-internal sealed class ClaimsDisasterAccess(IHttpContextAccessor accessor) : IDisasterAccess
+internal sealed class ClaimsDisasterAccess(IHttpContextAccessor accessor, bool localDemo) : IDisasterAccess
 {
     public IReadOnlyCollection<int>? AllowedDisasters
     {
         get
         {
             var user = accessor.HttpContext?.User;
-            if (user is null || user.HasClaim("local_demo", "true")) return null;
+            if (user is null || (localDemo && user.HasClaim("local_demo", "true"))) return null;
             return user.FindAll("disaster_id").Select(c => int.TryParse(c.Value, out var id) ? id : 0)
                 .Where(id => id > 0).Distinct().ToArray();
         }

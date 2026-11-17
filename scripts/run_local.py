@@ -24,6 +24,10 @@ try:
         if project == 'DisasterLocation.Gateway':
             folder = Path(os.environ.get('GATEWAY_PROJECT_PATH', root.parent / 'disaster-api-gateway' / project))
             process_env = {**env, 'ASPNETCORE_ENVIRONMENT': 'Reconstruction'}
+            for cluster, address in [('disasters-api', 'http://localhost:5156/'), ('reconstruction-api', 'http://localhost:5160/')]:
+                prefix = f'ReverseProxy__Clusters__{cluster}__Destinations__'
+                if not any(key.replace(':', '__').lower().startswith(prefix.lower()) for key in env):
+                    process_env[prefix + 'local__Address'] = address
         dll = folder / 'bin/Debug/net10.0' / (project + '.dll')
         if not dll.exists(): raise SystemExit('Compile la solución y el Gateway compartido antes de iniciar.')
         processes.append(subprocess.Popen(['dotnet', str(dll), '--urls', f'http://localhost:{port}'], cwd=folder, env=process_env))
