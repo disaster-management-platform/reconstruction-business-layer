@@ -19,9 +19,14 @@ if args.demo:
 processes = []
 try:
     for project, port in [('DisasterLocation', 5156), ('Reconstruction.Api', 5160), ('DisasterLocation.Gateway', 5080)]:
-        dll = root / project / 'bin/Debug/net10.0' / (project + '.dll')
-        if not dll.exists(): raise SystemExit('Compile la solución antes de iniciar.')
-        processes.append(subprocess.Popen(['dotnet', str(dll), '--urls', f'http://localhost:{port}'], cwd=root / project, env=env))
+        folder = root / project
+        process_env = env
+        if project == 'DisasterLocation.Gateway':
+            folder = Path(os.environ.get('GATEWAY_PROJECT_PATH', root.parent / 'disaster-api-gateway' / project))
+            process_env = {**env, 'ASPNETCORE_ENVIRONMENT': 'Reconstruction'}
+        dll = folder / 'bin/Debug/net10.0' / (project + '.dll')
+        if not dll.exists(): raise SystemExit('Compile la solución y el Gateway compartido antes de iniciar.')
+        processes.append(subprocess.Popen(['dotnet', str(dll), '--urls', f'http://localhost:{port}'], cwd=folder, env=process_env))
     print('Interfaz: http://localhost:5080. Ctrl+C detiene los procesos.', flush=True)
     while all(process.poll() is None for process in processes): time.sleep(0.5)
 except KeyboardInterrupt:

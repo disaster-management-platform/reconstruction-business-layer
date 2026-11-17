@@ -9,8 +9,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DisasterLocation.Core", "Di
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DisasterLocation.BLL", "DisasterLocation.BLL\DisasterLocation.BLL.csproj", "{31E27CC9-2BA5-4C3B-A8D0-2A7C59CD87FE}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DisasterLocation.Gateway", "DisasterLocation.Gateway\DisasterLocation.Gateway.csproj", "{8B70D3C9-0A3C-4FC8-8721-09B1CBC408A8}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Reconstruction.Domain", "Reconstruction.Domain\Reconstruction.Domain.csproj", "{37391564-308C-5F5C-9374-621C19D73E93}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Reconstruction.Application", "Reconstruction.Application\Reconstruction.Application.csproj", "{99E7101B-55E4-5335-97EC-E3B0B9A8AFF8}"
@@ -69,18 +67,6 @@ Global
 		{31E27CC9-2BA5-4C3B-A8D0-2A7C59CD87FE}.Release|x64.Build.0 = Release|Any CPU
 		{31E27CC9-2BA5-4C3B-A8D0-2A7C59CD87FE}.Release|x86.ActiveCfg = Release|Any CPU
 		{31E27CC9-2BA5-4C3B-A8D0-2A7C59CD87FE}.Release|x86.Build.0 = Release|Any CPU
-		{8B70D3C9-0A3C-4FC8-8721-09B1CBC408A8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{8B70D3C9-0A3C-4FC8-8721-09B1CBC408A8}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{8B70D3C9-0A3C-4FC8-8721-09B1CBC408A8}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{8B70D3C9-0A3C-4FC8-8721-09B1CBC408A8}.Debug|x64.Build.0 = Debug|Any CPU
-		{8B70D3C9-0A3C-4FC8-8721-09B1CBC408A8}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{8B70D3C9-0A3C-4FC8-8721-09B1CBC408A8}.Debug|x86.Build.0 = Debug|Any CPU
-		{8B70D3C9-0A3C-4FC8-8721-09B1CBC408A8}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{8B70D3C9-0A3C-4FC8-8721-09B1CBC408A8}.Release|Any CPU.Build.0 = Release|Any CPU
-		{8B70D3C9-0A3C-4FC8-8721-09B1CBC408A8}.Release|x64.ActiveCfg = Release|Any CPU
-		{8B70D3C9-0A3C-4FC8-8721-09B1CBC408A8}.Release|x64.Build.0 = Release|Any CPU
-		{8B70D3C9-0A3C-4FC8-8721-09B1CBC408A8}.Release|x86.ActiveCfg = Release|Any CPU
-		{8B70D3C9-0A3C-4FC8-8721-09B1CBC408A8}.Release|x86.Build.0 = Release|Any CPU
 		{37391564-308C-5F5C-9374-621C19D73E93}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{37391564-308C-5F5C-9374-621C19D73E93}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{37391564-308C-5F5C-9374-621C19D73E93}.Release|Any CPU.ActiveCfg = Release|Any CPU

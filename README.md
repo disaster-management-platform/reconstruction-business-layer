@@ -88,6 +88,7 @@ Compilar la solución e iniciar el entorno local:
 
 ```bash
 dotnet build DisasterLocation.sln
+dotnet build ../disaster-api-gateway/DisasterLocation.Gateway.sln
 python3 scripts/run_local.py --demo
 ```
 
