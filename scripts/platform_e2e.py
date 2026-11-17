@@ -5,7 +5,9 @@ from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
-import sqlite3
+import psycopg2
+from contextlib import closing
+from smoke_test import test_database, postgres_connection_string, migrate_database
 import tempfile
 from threading import Thread
 from urllib.request import Request, urlopen
@@ -47,14 +49,14 @@ def main():
     modules = ThreadingHTTPServer(('127.0.0.1', 0), ExternalModules)
     worker = Thread(target=modules.serve_forever, daemon=True); worker.start()
     try:
-        with tempfile.TemporaryDirectory(prefix='platform-integrated-') as folder:
-            database = Path(folder) / 'test.db'
+        with tempfile.TemporaryDirectory(prefix='platform-integrated-') as folder, test_database() as database:
             a, r, g = free_port(), free_port(), free_port()
             api, reconstruction, gateway = (f'http://127.0.0.1:{port}' for port in (a, r, g))
             external = f'http://127.0.0.1:{modules.server_port}/'
-            common = {'ConnectionStrings__Disasters': f'Data Source={database}', 'Security__LocalDemo': 'true',
+            common = {'ConnectionStrings__Disasters': postgres_connection_string(database), 'Security__LocalDemo': 'true',
                 'ASPNETCORE_ENVIRONMENT': 'Development', 'Messaging__Enabled': 'false'}
             with open(Path(folder) / 'process.log', 'w+') as log:
+                migrate_database(database, log)
                 try:
                     processes.append(start('DisasterLocation', a, common, log))
                     processes.append(start('Reconstruction.Api', r, {**common, 'Reconstruction__DemoExternalData': 'false',
@@ -125,9 +127,11 @@ def main():
                     assert call(f"/api/reconstruccion/financiacion?disasterId={disaster['id']}")['committedAmount'] == 80
                     download = request(gateway, path + f"/adjuntos/{evidence['id']}")
                     assert download[0] == 200 and download[2].startswith(b'%PDF-')
-                    with sqlite3.connect(database) as db:
-                        assert db.execute('PRAGMA foreign_key_check').fetchall() == []
-                        assert db.execute('SELECT COUNT(*) FROM ReconstructionReports').fetchone()[0] == 2
+                    with closing(psycopg2.connect(database)) as connection, connection.cursor() as db:
+                        db.execute('SELECT (SELECT COUNT(*) FROM reconstruction."ReconstructionReports" r LEFT JOIN reconstruction."ReconstructionActivities" a ON r."ActivityId"=a."Id" WHERE a."Id" IS NULL) + (SELECT COUNT(*) FROM reconstruction."ReconstructionActivities" a LEFT JOIN reconstruction."ReconstructionProjects" p ON a."ProjectId"=p."Id" WHERE p."Id" IS NULL)')
+                        assert db.fetchone()[0] == 0
+                        db.execute('SELECT COUNT(*) FROM "ReconstructionReports"')
+                        assert db.fetchone()[0] == 2
                     stop(processes[1])
                     processes[1] = start('Reconstruction.Api', r, {**common, 'Reconstruction__DemoExternalData': 'false',
                         'ExternalApis__Disasters': api + '/', 'ExternalApis__DamageAssessments__BaseUrl': external,

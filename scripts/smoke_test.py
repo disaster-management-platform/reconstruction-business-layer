@@ -1,4 +1,4 @@
-"""Prueba real Gateway -> API -> BLL -> DAL -> SQLite, con base temporal.
+"""Prueba real Gateway -> API -> BLL -> DAL -> PostgreSQL, con base temporal.
 
 Ejecutar desde la raíz:
 dotnet build && dotnet build ../disaster-api-gateway/DisasterLocation.Gateway.sln
@@ -9,14 +9,52 @@ import json
 import os
 from pathlib import Path
 import socket
-import sqlite3
+import psycopg2
+import psycopg2.sql
+from contextlib import closing, contextmanager
 import subprocess
 import tempfile
 import time
+import uuid
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@contextmanager
+def test_database():
+    settings = psycopg2.extensions.parse_dsn(os.environ["TEST_POSTGRES_DSN"])
+    if not settings.get("host", "").startswith("/"):
+        raise ValueError("Las pruebas requieren un socket PostgreSQL local, nunca Supabase.")
+    name = "platform_test_" + uuid.uuid4().hex
+    with closing(psycopg2.connect(**settings)) as admin:
+        admin.autocommit = True
+        with admin.cursor() as cursor:
+            cursor.execute(psycopg2.sql.SQL("CREATE DATABASE {}").format(psycopg2.sql.Identifier(name)))
+        try:
+            settings["dbname"] = name
+            settings["options"] = "-csearch_path=disasters,reconstruction,public"
+            yield psycopg2.extensions.make_dsn(**settings)
+        finally:
+            with admin.cursor() as cursor:
+                cursor.execute(psycopg2.sql.SQL("DROP DATABASE {} WITH (FORCE)").format(psycopg2.sql.Identifier(name)))
+
+
+def postgres_connection_string(database):
+    settings = psycopg2.extensions.parse_dsn(database)
+    def escape(value):
+        return '"' + value.replace('"', '""') + '"'
+    return ";".join(key + "=" + escape(settings[source]) for key, source in
+        [("Host", "host"), ("Port", "port"), ("Database", "dbname"), ("Username", "user"), ("Password", "password")]
+        if source in settings)
+
+
+def migrate_database(database, log):
+    project = ROOT / "DisasterLocation"
+    subprocess.run(["dotnet", str(project / "bin/Debug/net10.0/DisasterLocation.dll"), "--Database:Migrate=true"],
+        cwd=project, env={**os.environ, "ConnectionStrings__Disasters": postgres_connection_string(database)},
+        stdout=log, stderr=log, check=True, timeout=60)
 
 
 def free_port():
@@ -78,14 +116,14 @@ def stop(process):
 
 def main():
     processes = []
-    with tempfile.TemporaryDirectory(prefix="disasters-test-") as folder:
-        database = Path(folder) / "test.db"
+    with tempfile.TemporaryDirectory(prefix="disasters-test-") as folder, test_database() as database:
         api_port, gateway_port = free_port(), free_port()
         api_url = f"http://127.0.0.1:{api_port}"
         gateway_url = f"http://127.0.0.1:{gateway_port}"
-        api_env = {"ConnectionStrings__Disasters": f"Data Source={database}"}
+        api_env = {"ConnectionStrings__Disasters": postgres_connection_string(database)}
         with open(Path(folder) / "processes.log", "w+") as log:
             try:
+                migrate_database(database, log)
                 backend = start("DisasterLocation", api_port, api_env, log)
                 processes.append(backend)
                 wait_ready(api_url, "/api/desastres", backend)
@@ -158,14 +196,15 @@ def main():
                 processes.append(backend)
                 wait_ready(api_url, "/api/desastres", backend)
                 assert len(request(gateway_url)[2]) == 2, "Los datos deben persistir tras reiniciar"
-                with sqlite3.connect(database) as connection:
-                    assert connection.execute("SELECT COUNT(*) FROM Desastres").fetchone()[0] == 2
+                with closing(psycopg2.connect(database)) as connection, connection.cursor() as cursor:
+                    cursor.execute('SELECT COUNT(*) FROM "Desastres"')
+                    assert cursor.fetchone()[0] == 2
                     try:
-                        connection.execute("UPDATE Desastres SET Severidad = 6")
-                    except sqlite3.IntegrityError:
-                        pass
+                        cursor.execute('UPDATE "Desastres" SET "Severidad" = 6')
+                    except psycopg2.IntegrityError:
+                        connection.rollback()
                     else:
-                        raise AssertionError("Falta la restricción de severidad en SQLite")
+                        raise AssertionError("Falta la restricción de severidad en PostgreSQL")
                 print("OK: registro web/móvil, consulta, validación, gateway, CORS, DAL y persistencia tras reinicio.")
             except Exception:
                 log.flush()

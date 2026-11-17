@@ -1,6 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Platform.DAL;
 using Platform.DAL.Contexts;
@@ -18,9 +16,8 @@ namespace Reconstruction.Tests;
 
 public sealed class MessagingTests : IDisposable
 {
-    private readonly string _folder = Path.Combine(Path.GetTempPath(), "messaging-test-" + Guid.NewGuid());
-    private string ConnectionString => $"Data Source={Path.Combine(_folder, "disasters.db")};Pooling=False";
-    public MessagingTests() => Directory.CreateDirectory(_folder);
+    private readonly PostgresDatabase _database = new();
+    private string ConnectionString => _database.ConnectionString;
 
     private ServiceProvider Services() => new ServiceCollection().AddPlatformDal(ConnectionString)
         .AddScoped<FormalizationEventHandler>().AddScoped<MonitoringEventHandler>()
@@ -303,22 +300,22 @@ public sealed class MessagingTests : IDisposable
     }
 
     [Fact]
-    public async Task MigrationPreservesLegacyInboxAsTimelineAndAllowsOtherConsumers()
+    public async Task MigrationRerunPreservesInboxAndAllowsOtherConsumers()
     {
         var evt = Event("reconstruction.proposals.generated"); var processedAt = DateTimeOffset.UtcNow.AddDays(-1);
-        await using (var legacy = new ReconstructionDbContext(new DbContextOptionsBuilder<ReconstructionDbContext>().UseSqlite(ConnectionString).Options))
+        // PostgreSQL stores timestamps at microsecond precision.
+        processedAt = new DateTimeOffset(processedAt.Ticks - processedAt.Ticks % 10, TimeSpan.Zero);
+        await using var provider = Services(); await provider.InitializePlatformDalAsync();
+        await using (var seed = provider.CreateAsyncScope())
         {
-            await legacy.GetService<IMigrator>().MigrateAsync("20261114031752_LockFormalizedBudget");
-            await legacy.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO InboxMessages(Id, ProcessedAt) VALUES({evt.Id}, {processedAt});");
-            // Insertar con el esquema histórico, sin columnas de migraciones posteriores.
-            var proposal = Proposal();
-            await legacy.Database.ExecuteSqlInterpolatedAsync($"""
-                INSERT INTO ReconstructionProposals(Id, DisasterId, Zone, AssetType, Damage, AssessmentCount,
-                    ProposedBudget, Priority, Status, CreatedAt, EvaluationsJson, IsSelectedForReconstruction)
-                VALUES({proposal.Id}, 1, 'Zona', 'Puente', 3, 1, '100', 0, 0, {proposal.CreatedAt}, '[]', 0);
-                """);
+            var context = seed.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
+            context.Proposals.Add(Proposal());
+            context.InboxMessages.Add(new Platform.DAL.Models.InboxMessage { ConsumerName = ConsumerNames.Timeline,
+                EventId = evt.Id, ProcessedAt = processedAt });
+            await context.SaveChangesAsync();
         }
-        await using var provider = Services(); await provider.InitializePlatformDalAsync(); await provider.InitializePlatformDalAsync();
+        await PlatformDatabase.MigrateAsync(ConnectionString);
+        await PlatformDatabase.MigrateAsync(ConnectionString);
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
         var preserved = await db.InboxMessages.SingleAsync();
@@ -329,5 +326,5 @@ public sealed class MessagingTests : IDisposable
         Assert.Equal(2, await db.InboxMessages.CountAsync()); Assert.Equal(0, await db.TimelineEntries.CountAsync());
     }
 
-    public void Dispose() => Directory.Delete(_folder, recursive: true);
+    public void Dispose() => _database.Dispose();
 }

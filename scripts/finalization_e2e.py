@@ -2,7 +2,9 @@
 """Verify finalization and the complete final report using temporary processes/data."""
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import sqlite3
+import psycopg2
+from contextlib import closing
+from smoke_test import test_database, postgres_connection_string, migrate_database
 import tempfile
 import uuid
 
@@ -11,14 +13,14 @@ from smoke_test import free_port, request, start, stop, wait_ready
 
 def main():
     processes = []
-    with tempfile.TemporaryDirectory(prefix="finalization-e2e-") as folder:
-        database = Path(folder) / "disasters.db"
+    with tempfile.TemporaryDirectory(prefix="finalization-e2e-") as folder, test_database() as database:
         a, r, g = free_port(), free_port(), free_port()
         api_url, reconstruction_url, gateway_url = (f"http://127.0.0.1:{p}" for p in (a, r, g))
-        common = {"ConnectionStrings__Disasters": f"Data Source={database}"}
+        common = {"ConnectionStrings__Disasters": postgres_connection_string(database)}
         reconstruction_env = {**common, "Reconstruction__DemoExternalData": "true",
                               "Messaging__Enabled": "false", "ExternalApis__Disasters": api_url + "/"}
         with open(Path(folder) / "processes.log", "w+") as log:
+            migrate_database(database, log)
             try:
                 disasters = start("DisasterLocation", a, common, log); processes.append(disasters)
                 reconstruction = start("Reconstruction.Api", r, reconstruction_env, log); processes.append(reconstruction)
@@ -58,8 +60,8 @@ def main():
                     if completed:
                         # Restore legacy rows for the historical no-report scenario.
                         # New activities can only be created Pending through the API.
-                        with sqlite3.connect(database) as db:
-                            db.execute("UPDATE ReconstructionActivities SET Status=2 WHERE ProjectId=?", (project["id"].upper(),))
+                        with closing(psycopg2.connect(database)) as connection, connection.cursor() as db:
+                            db.execute('UPDATE "ReconstructionActivities" SET "Status"=2 WHERE "ProjectId"=%s', (project["id"],)); connection.commit()
                     return path, project
 
                 path, project = prepare(proposals[0])
@@ -103,11 +105,15 @@ def main():
                 unchanged = call(other_path)
                 assert unchanged["status"] == "Monitoring" and unchanged["closedAt"] is None
                 assert unchanged["version"] == other_project["version"]
-                with sqlite3.connect(database) as db:
-                    assert db.execute("SELECT COUNT(*) FROM ReconstructionReports").fetchone()[0] == 5
-                    assert db.execute("SELECT COUNT(*) FROM ReconstructionAudit").fetchone()[0] == 14
-                    assert db.execute("SELECT COUNT(*) FROM OutboxMessages").fetchone()[0] == 14
-                    assert db.execute("SELECT COUNT(*) FROM ReconstructionAudit WHERE Action='reconstruction.project.closed'").fetchone()[0] == 1
+                with closing(psycopg2.connect(database)) as connection, connection.cursor() as db:
+                    db.execute('SELECT COUNT(*) FROM "ReconstructionReports"')
+                    assert db.fetchone()[0] == 5
+                    db.execute('SELECT COUNT(*) FROM "ReconstructionAudit"')
+                    assert db.fetchone()[0] == 14
+                    db.execute('SELECT COUNT(*) FROM "OutboxMessages"')
+                    assert db.fetchone()[0] == 14
+                    db.execute('SELECT COUNT(*) FROM "ReconstructionAudit" WHERE "Action"=\'reconstruction.project.closed\'')
+                    assert db.fetchone()[0] == 1
                 for asset in ["/final-report.html", "/final-report.js", "/final-report.css"]:
                     call(asset)
                 print("OK: finalización por estados, reporte completo, totales, reintentos y conservación tras reinicio.")

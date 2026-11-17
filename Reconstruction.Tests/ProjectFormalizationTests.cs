@@ -121,12 +121,11 @@ public sealed class ProjectFormalizationDomainTests
 
 public sealed class ProjectFormalizationPersistenceTests : IDisposable
 {
-    private readonly string _folder = Path.Combine(Path.GetTempPath(), "formalization-" + Guid.NewGuid());
-    public ProjectFormalizationPersistenceTests() => Directory.CreateDirectory(_folder);
+    private readonly PostgresDatabase _database = new();
 
     private async Task<ServiceProvider> ServicesAsync(decimal financing = 1000m)
     {
-        var services = new ServiceCollection().AddPlatformDal($"Data Source={Path.Combine(_folder, "disasters.db")};Pooling=False");
+        var services = new ServiceCollection().AddPlatformDal(_database.ConnectionString);
         services.AddScoped<ProjectFormalizationService>();
         services.AddScoped<ProposalReconciliationService>();
         services.AddSingleton<IProposalPolicy, WeightedProposalPolicy>();
@@ -332,7 +331,7 @@ public sealed class ProjectFormalizationPersistenceTests : IDisposable
         Assert.Equal(400m, (await services.GetRequiredService<ReconstructionDbContext>().FundingReservations.SingleAsync()).ReservedAmount);
     }
 
-    public void Dispose() => Directory.Delete(_folder, recursive: true);
+    public void Dispose() => _database.Dispose();
 
     private sealed class FixedFundingReader(decimal amount) : IFundingReader
     {

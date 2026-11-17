@@ -80,12 +80,11 @@ public sealed class ProjectClosureDomainTests
 
 public sealed class ProjectClosurePersistenceTests : IDisposable
 {
-    private readonly string _folder = Path.Combine(Path.GetTempPath(), "closure-" + Guid.NewGuid());
-    public ProjectClosurePersistenceTests() => Directory.CreateDirectory(_folder);
+    private readonly PostgresDatabase _database = new();
 
     private async Task<(ServiceProvider Provider, Guid Id)> SeedAsync(bool completed = false, bool withReports = false)
     {
-        var services = new ServiceCollection().AddPlatformDal($"Data Source={Path.Combine(_folder, "disasters.db")};Pooling=False");
+        var services = new ServiceCollection().AddPlatformDal(_database.ConnectionString);
         services.AddSingleton<IReportAttachmentVerifier, TestAttachments>();
         services.AddSingleton<IReportAttachmentVerifier, TestAttachments>().AddScoped<ProjectMonitoringService>(); services.AddScoped<ProjectClosureService>();
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
@@ -245,5 +244,5 @@ public sealed class ProjectClosurePersistenceTests : IDisposable
         Assert.Equal(0m, (await check.ServiceProvider.GetRequiredService<ProjectClosureService>().GetFinalReportAsync(seed.Id, default)).TotalExecuted);
     }
 
-    public void Dispose() => Directory.Delete(_folder, recursive: true);
+    public void Dispose() => _database.Dispose();
 }

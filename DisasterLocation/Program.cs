@@ -1,18 +1,25 @@
 using DisasterLocation.BLL;
 using DisasterLocation.Core;
 using Platform.DAL;
+using DisasterLocation.DAL;
 using Platform.Security;
 using System.Text.Json.Serialization;
 using Reconstruction.Application.Ports;
 
 var builder = WebApplication.CreateBuilder(args);
+if (builder.Configuration.GetValue<bool>("Database:Migrate"))
+{
+    await PlatformDatabase.MigrateAsync(builder.Configuration.GetConnectionString("Disasters")
+        ?? throw new InvalidOperationException("Configure ConnectionStrings:Disasters para PostgreSQL."));
+    return;
+}
+
 builder.Services.AddOpenApi();
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddProblemDetails();
 builder.Services.AddScoped<DisasterService>();
-builder.Services.AddPlatformDal(PlatformDatabase.ResolveConnectionString(
-    builder.Configuration.GetConnectionString("Disasters") ?? "Data Source=App_Data/disasters.db",
-    builder.Environment.ContentRootPath));
+builder.Services.AddDataAccess(builder.Configuration.GetConnectionString("Disasters")
+    ?? throw new InvalidOperationException("Configure ConnectionStrings:Disasters para PostgreSQL."));
 builder.Services.AddPlatformSecurity(builder.Configuration, builder.Environment);
 var app = builder.Build();
 app.UseAuthentication();
@@ -24,7 +31,6 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
     await Results.Problem(statusCode: status, title: status == 400 ? "Solicitud inválida" : "Error interno",
         detail: status == 400 ? "Revise los tipos y el formato JSON de la solicitud." : "Consulte el registro del servidor.").ExecuteAsync(context);
 }));
-await app.Services.InitializePlatformDalAsync();
 if (app.Environment.IsDevelopment()) app.MapOpenApi();
 var disasters = app.MapGroup("/api/desastres").WithTags("Desastres");
 disasters.MapGet("/", async (DisasterService service, CancellationToken ct) =>

@@ -15,9 +15,8 @@ builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
-builder.Services.AddPlatformDal(PlatformDatabase.ResolveConnectionString(
-    builder.Configuration.GetConnectionString("Disasters") ?? "Data Source=../DisasterLocation/App_Data/disasters.db",
-    builder.Environment.ContentRootPath));
+builder.Services.AddReconstructionDataAccess(builder.Configuration.GetConnectionString("Disasters")
+    ?? throw new InvalidOperationException("Configure ConnectionStrings:Disasters para PostgreSQL."));
 builder.Services.AddReconstruction(builder.Configuration);
 builder.Services.AddPlatformSecurity(builder.Configuration, builder.Environment);
 
@@ -31,7 +30,7 @@ app.UseExceptionHandler(errors => errors.Run(async context =>
         MissingResourceException => 404,
         BusinessConflictException => 409,
         DbUpdateConcurrencyException => 409,
-        DbUpdateException { InnerException: Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 19 } } => 409,
+        DbUpdateException update when PlatformDatabase.IsConflict(update) => 409,
         DomainException => 422,
         DependencyUnavailableException => 503,
         _ => 500
@@ -44,7 +43,6 @@ app.UseExceptionHandler(errors => errors.Run(async context =>
 }));
 app.UseAuthentication();
 app.UseAuthorization();
-await app.Services.InitializePlatformDalAsync();
 if (app.Environment.IsDevelopment()) app.MapOpenApi();
 
 app.MapGet("/api/reconstruccion/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();

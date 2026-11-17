@@ -90,15 +90,13 @@ public sealed class ProposalPolicyTests
 
 public sealed class ProposalDefinitionTests : IDisposable
 {
-    private readonly string _folder = Path.Combine(Path.GetTempPath(), "proposal-definition-" + Guid.NewGuid());
-
-    public ProposalDefinitionTests() => Directory.CreateDirectory(_folder);
+    private readonly PostgresDatabase _database = new();
 
     private async Task<ServiceProvider> ServicesAsync(bool disasterExists = true, int severity = 4,
         DisasterPhase phase = DisasterPhase.Recovery,
         IDamageAssessmentReader? assessments = null)
     {
-        var services = new ServiceCollection().AddPlatformDal($"Data Source={Path.Combine(_folder, "disasters.db")};Pooling=False");
+        var services = new ServiceCollection().AddPlatformDal(_database.ConnectionString);
         services.AddSingleton<IDisasterReader>(new StubDisasterReader(disasterExists, severity, phase));
         services.AddSingleton<IDamageAssessmentReader>(assessments ?? new DemoDamageAssessmentReader());
         services.AddSingleton<IProposalPolicy, WeightedProposalPolicy>();
@@ -500,7 +498,7 @@ public sealed class ProposalDefinitionTests : IDisposable
         await Assert.ThrowsAsync<MissingResourceException>(() => formalization.CreateFromProposalAsync(Guid.NewGuid(), 1, "operador", default));
     }
 
-    public void Dispose() => Directory.Delete(_folder, recursive: true);
+    public void Dispose() => _database.Dispose();
 
     private sealed class StubDisasterReader(bool exists, int severity, DisasterPhase phase) : IDisasterReader
     {

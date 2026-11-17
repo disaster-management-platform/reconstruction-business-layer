@@ -1,8 +1,6 @@
 using DisasterLocation.Core;
-using Microsoft.Data.Sqlite;
+using Npgsql;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Platform.DAL;
 using Platform.DAL.Contexts;
@@ -18,22 +16,20 @@ namespace Reconstruction.Tests;
 
 public sealed class PlatformPersistenceTests : IDisposable
 {
-    private readonly string _folder = Path.Combine(Path.GetTempPath(), "platform-dal-test-" + Guid.NewGuid());
-    private string ConnectionString => $"Data Source={Path.Combine(_folder, "disasters.db")};Pooling=False";
-    private static readonly string[] DisasterMigrations =
-    ["20261106013444_InitialCreate", "20261106013504_AddOperationId", "20261106013525_UseClientRequestId"];
-
-    public PlatformPersistenceTests() => Directory.CreateDirectory(_folder);
+    private readonly PostgresDatabase _database = new();
+    private string ConnectionString => _database.ConnectionString;
 
     private ServiceProvider Services() => new ServiceCollection().AddPlatformDal(ConnectionString).AddScoped<TimelineEventHandler>()
         .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+
+    private static Task InitializeAsync(IServiceProvider services) => services.InitializePlatformDalAsync();
 
     [Fact]
     public async Task FreshDatabaseHasBothModelsAndIndependentHistories()
     {
         await using var services = Services();
-        await services.InitializePlatformDalAsync();
-        await services.InitializePlatformDalAsync();
+        await InitializeAsync(services);
+        await InitializeAsync(services);
         await using var scope = services.CreateAsyncScope();
         var disasters = scope.ServiceProvider.GetRequiredService<DisasterDbContext>();
         var reconstruction = scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
@@ -47,198 +43,175 @@ public sealed class PlatformPersistenceTests : IDisposable
     }
 
     [Fact]
-    public async Task OriginalDisasterRegistrationPreservesItsHistoryAndClientRequestId()
+    public async Task DisasterRegistrationPreservesClientRequestIdAcrossMigrationReruns()
     {
+        await PlatformDatabase.MigrateAsync(ConnectionString);
         var requestId = Guid.NewGuid();
-        await using (var legacy = new DisasterDbContext(new DbContextOptionsBuilder<DisasterDbContext>()
-            .UseSqlite(ConnectionString).Options))
-        {
-            await legacy.GetService<IMigrator>().MigrateAsync(DisasterMigrations[^1]);
-            await legacy.Database.ExecuteSqlInterpolatedAsync($"""
-                INSERT INTO Desastres(Id, ClientRequestId, Nombre, Ubicacion, Severidad, Descripcion, Latitud, Longitud)
-                VALUES(42, {requestId}, 'Reporte histórico', 'Bogotá', 4, 'Conservar', 4.71, -74.07);
-                """);
-        }
         await using var services = DisasterLocation.DAL.DependencyInjection.AddDataAccess(
-            new ServiceCollection(), ConnectionString, _folder).BuildServiceProvider();
-        await DisasterLocation.DAL.DependencyInjection.InitializeDataAccessAsync(services);
-        await DisasterLocation.DAL.DependencyInjection.InitializeDataAccessAsync(services);
+            new ServiceCollection(), ConnectionString).BuildServiceProvider();
+        await using (var seed = services.CreateAsyncScope())
+        {
+            var context = seed.ServiceProvider.GetRequiredService<DisasterDbContext>();
+            context.Disasters.Add(new Disaster { Id = 42, ClientRequestId = requestId, Nombre = "Reporte",
+                Ubicacion = "Bogotá", Severidad = 4, Descripcion = "Conservar", Latitud = 4.71, Longitud = -74.07 });
+            await context.SaveChangesAsync();
+        }
+        await PlatformDatabase.MigrateAsync(ConnectionString);
         await using var scope = services.CreateAsyncScope();
-        var context = scope.ServiceProvider.GetRequiredService<DisasterDbContext>();
-        var record = await scope.ServiceProvider.GetRequiredService<IDisasterRepository>()
-            .GetByClientRequestIdAsync(requestId);
-        Assert.NotNull(record);
-        Assert.Equal(42, record.Id);
-        Assert.Null(record.Radio);
-        Assert.Equal(DisasterPhase.Registered, record.Phase);
-        Assert.Equal(1, record.Version);
-        Assert.Equal(context.Database.GetMigrations(), await context.Database.GetAppliedMigrationsAsync());
-        Assert.Empty(await context.PhaseAudit.ToListAsync());
+        var db = scope.ServiceProvider.GetRequiredService<DisasterDbContext>();
+        var record = await scope.ServiceProvider.GetRequiredService<IDisasterRepository>().GetByClientRequestIdAsync(requestId);
+        Assert.NotNull(record); Assert.Equal(42, record.Id); Assert.Null(record.Radio);
+        Assert.Equal(DisasterPhase.Registered, record.Phase); Assert.Equal(1, record.Version);
+        Assert.Empty(await db.PhaseAudit.ToListAsync());
         Assert.Null(scope.ServiceProvider.GetService<ReconstructionDbContext>());
-        Assert.Equal(0, await context.Database.SqlQueryRaw<int>(
-            "SELECT COUNT(*) AS Value FROM sqlite_master WHERE name = '__EFMigrationsHistory_Disaster'").SingleAsync());
-    }
-
-    [Theory]
-    [InlineData(1, false)]
-    [InlineData(2, false)]
-    [InlineData(3, false)]
-    [InlineData(1, true)]
-    [InlineData(2, true)]
-    [InlineData(3, true)]
-    public async Task LegacyDisastersKeepTheirDataAndReceiveOnlyPendingMigrations(int stage, bool retainHistory)
-    {
-        await using (var legacy = new DisasterDbContext(new DbContextOptionsBuilder<DisasterDbContext>()
-            .UseSqlite(ConnectionString).Options))
-        {
-            await legacy.GetService<IMigrator>().MigrateAsync(DisasterMigrations[stage - 1]);
-            await legacy.Database.ExecuteSqlRawAsync("""
-                INSERT INTO Desastres(Id, Nombre, Ubicacion, Severidad, Descripcion, Latitud, Longitud)
-                VALUES(42, 'Reporte histórico', 'Bogotá', 4, 'Conservar', 4.71, -74.07);
-                """);
-            if (!retainHistory) await legacy.Database.ExecuteSqlRawAsync("DROP TABLE __EFMigrationsHistory;");
-        }
-        await using var services = Services();
-        await services.InitializePlatformDalAsync();
-        await services.InitializePlatformDalAsync();
-        await using var scope = services.CreateAsyncScope();
-        var disasters = scope.ServiceProvider.GetRequiredService<DisasterDbContext>();
-        var record = await disasters.Disasters.SingleAsync();
-        Assert.Equal(42, record.Id);
-        Assert.Equal("Reporte histórico", record.Nombre);
-        Assert.Equal(disasters.Database.GetMigrations(), await disasters.Database.GetAppliedMigrationsAsync());
-    }
-
-    [Fact]
-    public async Task ExistingReconstructionHistoryAndProjectAreAdoptedWithoutRecreation()
-    {
-        var proposal = new ReconstructionProposal(42, "Zona Norte", "Puente", DamageLevel.Severe, 1, 100m, ProposalPriority.High);
-        var project = new ReconstructionProject(proposal);
-        proposal.Select();
-        await using (var legacy = new ReconstructionDbContext(new DbContextOptionsBuilder<ReconstructionDbContext>()
-            .UseSqlite(ConnectionString).Options))
-        {
-            await legacy.Database.MigrateAsync();
-            legacy.Proposals.Add(proposal);
-            legacy.Projects.Add(project);
-            await new ReconstructionUnitOfWork(legacy).CommitAsync(
-                IntegrationEvent.Typed(42, project.Id, "histórico", new ProposalsSelectedEvent(project.Id, proposal.Id, project.Version)), default);
-        }
-        await using var services = Services();
-        await services.InitializePlatformDalAsync();
-        await services.InitializePlatformDalAsync();
-        await using var scope = services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
-        Assert.Equal(project.Id, (await db.Projects.SingleAsync()).Id);
-        Assert.Equal(1, await db.OutboxMessages.CountAsync());
-        Assert.Equal(1, await db.AuditEntries.CountAsync());
         Assert.Equal(db.Database.GetMigrations(), await db.Database.GetAppliedMigrationsAsync());
     }
 
-    [Fact]
-    public async Task ProposalDefinitionMigrationPreservesOriginalProposalData()
+    [Theory]
+    [InlineData("Severidad", 0, false)]
+    [InlineData("Severidad", 5, true)]
+    [InlineData("Latitud", 91, false)]
+    [InlineData("Latitud", -90, true)]
+    [InlineData("Longitud", -181, false)]
+    [InlineData("Longitud", 180, true)]
+    public async Task PostgreSqlEnforcesDisasterBoundaries(string column, int value, bool valid)
     {
-        var id = Guid.NewGuid();
-        await using (var legacy = new ReconstructionDbContext(new DbContextOptionsBuilder<ReconstructionDbContext>().UseSqlite(ConnectionString).Options))
-        {
-            // The historical ID has 12 timestamp digits. Apply its unchanged Up
-            // operations directly to reproduce that original database faithfully.
-            var original = new Platform.DAL.Migrations.Reconstruction.InitialReconstruction();
-            foreach (var command in legacy.GetService<IMigrationsSqlGenerator>().Generate(original.UpOperations))
-                await legacy.Database.ExecuteSqlRawAsync(command.CommandText);
-            await legacy.Database.ExecuteSqlRawAsync("""
-                CREATE TABLE __EFMigrationsHistory(MigrationId TEXT PRIMARY KEY, ProductVersion TEXT NOT NULL);
-                INSERT INTO __EFMigrationsHistory VALUES('202611130001_InitialReconstruction', '10.0.14');
-                """);
-            await legacy.Database.ExecuteSqlInterpolatedAsync($"""
-                INSERT INTO ReconstructionProposals(Id, DisasterId, Zone, AssetType, Damage, AssessmentCount, ProposedBudget, Priority, Status, CreatedAt)
-                VALUES({id}, 42, 'Zona histórica', 'Puente', 3, 2, '1234.56', 2, 0, '2026-11-13 12:00:00+00:00');
-                """);
-        }
-        await using var services = Services();
-        await services.InitializePlatformDalAsync();
-        await services.InitializePlatformDalAsync();
-        await using var scope = services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
-        var proposal = await db.Proposals.SingleAsync();
-        Assert.Equal(id, proposal.Id);
-        Assert.Equal(1234.56m, proposal.ProposedBudget);
-        Assert.Equal(2, proposal.AssessmentCount);
-        Assert.Equal(ProposalStatus.Proposed, proposal.Status);
-        Assert.Empty(proposal.GetEvaluations());
-        Assert.Equal(1, proposal.Version);
-    }
-
-    [Fact]
-    public async Task FormalizationMigrationPreservesHistoricalBudgetsAndDoesNotInventContractData()
-    {
-        var proposalId = Guid.NewGuid();
-        var projectId = Guid.NewGuid();
-        await using (var legacy = new ReconstructionDbContext(new DbContextOptionsBuilder<ReconstructionDbContext>().UseSqlite(ConnectionString).Options))
-        {
-            await legacy.GetService<IMigrator>().MigrateAsync("20261114030249_DefineReconstructionProposals");
-            await legacy.Database.ExecuteSqlInterpolatedAsync($"""
-                INSERT INTO ReconstructionProposals(Id, DisasterId, Zone, AssetType, Damage, AssessmentCount, ProposedBudget, Priority, Status, CreatedAt)
-                VALUES({proposalId}, 42, 'Zona', 'Puente', 3, 1, '9876.54', 2, 1, '2026-11-13 12:00:00+00:00');
-                INSERT INTO ReconstructionProjects(Id, ProposalId, DisasterId, Status, FinalBudget, FundingSource, Responsible, Contractor, CreatedAt, ClosedAt, Version)
-                VALUES({projectId}, {proposalId}, 42, 2, '9876.54', 'Aportes', 'Autoridad', 'Contratista', '2026-11-13 12:00:00+00:00', NULL, 3);
-                """);
-        }
-        await using var services = Services();
-        await services.InitializePlatformDalAsync();
-        await services.InitializePlatformDalAsync();
-        await using var scope = services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
-        var project = await db.Projects.SingleAsync();
-        Assert.Equal(projectId, project.Id);
-        Assert.Equal(9876.54m, project.FinalBudget);
-        Assert.Equal(ProjectStatus.Monitoring, project.Status);
-        Assert.True(project.IsBudgetLocked);
-        Assert.Equal(3, project.Version);
-        Assert.Null(project.BudgetLockedAt);
-        Assert.Null(project.ContractSignedAt);
-        Assert.Empty(project.SignedContractReference);
-        Assert.Throws<Reconstruction.Domain.DomainException>(() => project.SaveFormalization(9999m, "Otra", "Otra", "Otra", []));
-    }
-
-    [Fact]
-    public async Task RejectsPartialReconstructionSchemaWithoutReplayingInitialMigration()
-    {
-        await using (var connection = new SqliteConnection(ConnectionString))
-        {
-            await connection.OpenAsync();
-            using var command = connection.CreateCommand();
-            command.CommandText = "CREATE TABLE ReconstructionProposals (Id TEXT PRIMARY KEY); INSERT INTO ReconstructionProposals VALUES('preserve');";
-            await command.ExecuteNonQueryAsync();
-        }
-        await using var services = Services();
-        await Assert.ThrowsAsync<InvalidOperationException>(() => services.InitializePlatformDalAsync());
-        await using var db = new ReconstructionDbContext(new DbContextOptionsBuilder<ReconstructionDbContext>().UseSqlite(ConnectionString).Options);
-        Assert.Empty(await db.Database.GetAppliedMigrationsAsync());
-    }
-
-    [Fact]
-    public async Task InconsistentLegacyHistoryIsRejectedBeforeReplayingARename()
-    {
-        await using (var legacy = new DisasterDbContext(new DbContextOptionsBuilder<DisasterDbContext>().UseSqlite(ConnectionString).Options))
-        {
-            await legacy.Database.MigrateAsync();
-            await legacy.Database.ExecuteSqlRawAsync("DELETE FROM __EFMigrationsHistory WHERE MigrationId='20261106013525_UseClientRequestId';");
-        }
-        await using var services = Services();
-        await Assert.ThrowsAsync<InvalidOperationException>(() => services.InitializePlatformDalAsync());
+        await using var services = Services(); await InitializeAsync(services);
         await using var scope = services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<DisasterDbContext>();
-        Assert.Empty(await db.Database.GetAppliedMigrationsAsync());
-        // The column still exists and no second RENAME was attempted.
-        Assert.Empty(await db.Disasters.Select(x => x.ClientRequestId).ToListAsync());
+        db.Disasters.Add(new Disaster { Nombre = "Reporte", Ubicacion = "Bogotá", Severidad = 4,
+            Descripcion = "Conservar", Latitud = 4.71, Longitud = -74.07 });
+        await db.SaveChangesAsync();
+        await using var connection = new NpgsqlConnection(ConnectionString); await connection.OpenAsync();
+        await using var command = new NpgsqlCommand($"UPDATE disasters.\"Desastres\" SET \"{column}\" = @value", connection);
+        command.Parameters.AddWithValue("value", value);
+        if (valid) Assert.Equal(1, await command.ExecuteNonQueryAsync());
+        else
+        {
+            var error = await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteNonQueryAsync());
+            Assert.Equal(PostgresErrorCodes.CheckViolation, error.SqlState);
+            Assert.Equal("CK_Desastres_" + column, error.ConstraintName);
+        }
+    }
+
+    [Fact]
+    public async Task MigrationRerunPreservesProjectsAuditAndOutbox()
+    {
+        await using var services = Services(); await InitializeAsync(services);
+        var proposal = new ReconstructionProposal(42, "Zona Norte", "Puente", DamageLevel.Severe, 1, 100m, ProposalPriority.High);
+        var project = new ReconstructionProject(proposal); proposal.Select();
+        await using (var scope = services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
+            db.AddRange(proposal, project);
+            await new ReconstructionUnitOfWork(db).CommitAsync(
+                IntegrationEvent.Typed(42, project.Id, "operador", new ProposalsSelectedEvent(project.Id, proposal.Id, project.Version)), default);
+        }
+        await InitializeAsync(services);
+        await using var check = services.CreateAsyncScope();
+        var saved = check.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
+        Assert.Equal(project.Id, (await saved.Projects.SingleAsync()).Id);
+        Assert.Equal(1, await saved.OutboxMessages.CountAsync()); Assert.Equal(1, await saved.AuditEntries.CountAsync());
+        Assert.Equal(saved.Database.GetMigrations(), await saved.Database.GetAppliedMigrationsAsync());
+    }
+
+    [Fact]
+    public async Task ProposalRoundTripPreservesExactMoneyAndDefaults()
+    {
+        await using var services = Services(); await InitializeAsync(services);
+        var proposal = new ReconstructionProposal(42, "Zona", "Puente", DamageLevel.Severe, 2, 1234.56789m, ProposalPriority.High);
+        await using (var scope = services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
+            db.Proposals.Add(proposal); await db.SaveChangesAsync();
+        }
+        await using var check = services.CreateAsyncScope();
+        var saved = await check.ServiceProvider.GetRequiredService<ReconstructionDbContext>().Proposals.SingleAsync();
+        Assert.Equal(proposal.Id, saved.Id); Assert.Equal(1234.56789m, saved.ProposedBudget);
+        Assert.Equal(2, saved.AssessmentCount); Assert.Equal(ProposalStatus.Proposed, saved.Status);
+        Assert.Empty(saved.GetEvaluations()); Assert.Equal(1, saved.Version);
+    }
+
+    [Fact]
+    public async Task TemporalRoundTripPreservesInstantsAndNormalizesUtc()
+    {
+        await using var services = Services(); await InitializeAsync(services);
+        var original = DateTimeOffset.Parse("2026-11-13T12:00:00-05:00");
+        var id = Guid.NewGuid();
+        await using (var scope = services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
+            db.InboxMessages.Add(new InboxMessage { ConsumerName = ConsumerNames.Timeline, EventId = id, ProcessedAt = original });
+            await db.SaveChangesAsync();
+        }
+        await using var check = services.CreateAsyncScope();
+        var saved = await check.ServiceProvider.GetRequiredService<ReconstructionDbContext>().InboxMessages.SingleAsync();
+        Assert.Equal(original, saved.ProcessedAt); Assert.Equal(TimeSpan.Zero, saved.ProcessedAt.Offset);
+    }
+
+    [Fact]
+    public async Task PublishedLifecycleTimestampsMatchPersistedProjectTimestamps()
+    {
+        await using var services = Services(); await InitializeAsync(services);
+        var project = ProjectMonitoringDomainTests.Project();
+        await using (var scope = services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
+            db.Projects.Add(project);
+            var work = scope.ServiceProvider.GetRequiredService<IReconstructionUnitOfWork>();
+            await work.CommitAsync(IntegrationEvent.Typed(1, project.Id, "operador", new ProjectFormalizedEvent(project.Id,
+                project.Version, project.FinalBudget, project.SignedContractReference, project.ContractSignedAt,
+                project.Activities.Select(activity => new ScheduledActivityData(activity.Id, activity.Name, activity.Responsible,
+                    activity.StartsAt, activity.DueAt, activity.Budget)).ToArray())), default);
+            foreach (var activity in project.Activities)
+                project.RegisterProgress(activity.Id, ActivityStatus.Completed, 10m, ["foto"], ["acta"], "operador");
+            project.Close();
+            await work.CommitAsync(IntegrationEvent.Typed(1, project.Id, "operador", new ProjectClosedEvent(project.Id,
+                project.Version, project.ClosedAt!.Value, project.FinalBudget, 20m, 2, 2)), default);
+        }
+        await using var check = services.CreateAsyncScope();
+        var saved = check.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
+        var record = await saved.Projects.Include(x => x.Activities).SingleAsync();
+        var events = (await saved.OutboxMessages.ToListAsync()).Select(message =>
+            System.Text.Json.JsonSerializer.Deserialize<EventEnvelope>(message.PayloadJson)!).ToArray();
+        var formalized = events.Single(envelope => envelope.Type == "reconstruction.project.formalized").Read<ProjectFormalizedEvent>()!;
+        Assert.Equal(record.ContractSignedAt, formalized.SignedAt);
+        Assert.All(formalized.Activities, activity => {
+            var persisted = record.Activities.Single(value => value.Id == activity.ActivityId);
+            Assert.Equal(persisted.StartsAt, activity.StartsAt); Assert.Equal(persisted.DueAt, activity.DueAt);
+        });
+        Assert.Equal(record.ClosedAt, events.Single(envelope => envelope.Type == "reconstruction.project.closed").Read<ProjectClosedEvent>()!.ClosedAt);
+    }
+
+    [Fact]
+    public async Task ExistingPartialSchemaFailsWithoutOverwritingItsRows()
+    {
+        await using var connection = new NpgsqlConnection(ConnectionString); await connection.OpenAsync();
+        await using (var command = new NpgsqlCommand("CREATE SCHEMA reconstruction; CREATE TABLE reconstruction.\"ReconstructionProposals\" (\"Id\" text PRIMARY KEY); INSERT INTO reconstruction.\"ReconstructionProposals\" VALUES ('preserve');", connection))
+            await command.ExecuteNonQueryAsync();
+        var error = await Assert.ThrowsAsync<PostgresException>(() => PlatformDatabase.MigrateAsync(ConnectionString));
+        Assert.Equal(PostgresErrorCodes.DuplicateTable, error.SqlState);
+        await using var verify = new NpgsqlCommand("SELECT \"Id\" FROM reconstruction.\"ReconstructionProposals\"", connection);
+        Assert.Equal("preserve", await verify.ExecuteScalarAsync());
+    }
+
+    [Fact]
+    public async Task OnlyKnownReconstructionUniquenessViolationsAreHttpConflicts()
+    {
+        var unique = new PostgresException("duplicate", "ERROR", "ERROR", "23505", schemaName: "reconstruction", constraintName: "PK_InboxMessages");
+        Assert.True(PlatformDatabase.IsConflict(new DbUpdateException("save", unique)));
+        foreach (var error in new[] {
+            new PostgresException("foreign key", "ERROR", "ERROR", "23503", schemaName: "reconstruction", constraintName: "PK_InboxMessages"),
+            new PostgresException("unknown unique", "ERROR", "ERROR", "23505", schemaName: "reconstruction", constraintName: "unexpected"),
+            new PostgresException("other domain", "ERROR", "ERROR", "23505", schemaName: "disasters", constraintName: "PK_InboxMessages") })
+            Assert.False(PlatformDatabase.IsConflict(new DbUpdateException("save", error)));
     }
 
     [Fact]
     public async Task InboxAndTimelineRemainIdempotentInTheSharedDatabase()
     {
         await using var services = Services();
-        await services.InitializePlatformDalAsync();
+        await InitializeAsync(services);
         var evt = new EventEnvelope(Guid.NewGuid(), "reconstruction.project.closed", 1, Guid.NewGuid(), "operador", "Cierre", DateTimeOffset.UtcNow);
         for (var attempt = 0; attempt < 2; attempt++)
         {
@@ -252,20 +225,21 @@ public sealed class PlatformPersistenceTests : IDisposable
     }
 
     [Fact]
-    public async Task BothApiInitializersCanRunTogether()
+    public async Task BothMigrationInitializersCanRunTogether()
     {
         await using var first = Services();
         await using var second = Services();
         await Task.WhenAll(first.InitializePlatformDalAsync(), second.InitializePlatformDalAsync());
         await using var scope = first.CreateAsyncScope();
-        Assert.Equal(12, (await scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>().Database.GetAppliedMigrationsAsync()).Count());
+        var context = scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
+        Assert.Equal(context.Database.GetMigrations(), await context.Database.GetAppliedMigrationsAsync());
     }
 
     [Fact]
     public async Task ConcurrentProjectUpdateRollsBackItsAuditAndOutbox()
     {
         await using var services = Services();
-        await services.InitializePlatformDalAsync();
+        await InitializeAsync(services);
         var id = Guid.Empty;
         await using (var scope = services.CreateAsyncScope())
         {
@@ -305,7 +279,7 @@ public sealed class PlatformPersistenceTests : IDisposable
     public async Task ConcurrentProposalChangeRejectsStaleWritesAndRollsBackProjectAuditAndOutbox(bool selectFirst)
     {
         await using var services = Services();
-        await services.InitializePlatformDalAsync();
+        await InitializeAsync(services);
         var evaluation = ProposalPolicyTests.Evaluation();
         var proposal = new ReconstructionProposal(1, evaluation.Location, evaluation.AssetType, evaluation.DamageLevel, [evaluation]);
         await using (var seed = services.CreateAsyncScope())
@@ -359,5 +333,5 @@ public sealed class PlatformPersistenceTests : IDisposable
         Assert.Equal(System.Text.Json.JsonSerializer.Serialize(proposal.Evaluations), System.Text.Json.JsonSerializer.Serialize(persisted.Evaluations));
     }
 
-    public void Dispose() => Directory.Delete(_folder, recursive: true);
+    public void Dispose() => _database.Dispose();
 }

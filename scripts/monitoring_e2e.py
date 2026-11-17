@@ -5,7 +5,9 @@ Run after dotnet build. No application data or development ports are used.
 """
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import sqlite3
+import psycopg2
+from contextlib import closing
+from smoke_test import test_database, postgres_connection_string, migrate_database
 import tempfile
 import uuid
 
@@ -14,15 +16,15 @@ from smoke_test import free_port, request, start, stop, wait_ready
 
 def main():
     processes = []
-    with tempfile.TemporaryDirectory(prefix="monitoring-e2e-") as folder:
-        database = Path(folder) / "disasters.db"
+    with tempfile.TemporaryDirectory(prefix="monitoring-e2e-") as folder, test_database() as database:
         a, r, g = free_port(), free_port(), free_port()
         api_url, reconstruction_url, gateway_url = (f"http://127.0.0.1:{p}" for p in (a, r, g))
-        common = {"ConnectionStrings__Disasters": f"Data Source={database}"}
+        common = {"ConnectionStrings__Disasters": postgres_connection_string(database)}
         reconstruction_env = {**common, "ASPNETCORE_ENVIRONMENT": "Development",
                               "Reconstruction__DemoExternalData": "true", "Messaging__Enabled": "false",
                               "ExternalApis__Disasters": api_url + "/"}
         with open(Path(folder) / "processes.log", "w+") as log:
+            migrate_database(database, log)
             try:
                 disasters = start("DisasterLocation", a, common, log); processes.append(disasters)
                 reconstruction = start("Reconstruction.Api", r, reconstruction_env, log); processes.append(reconstruction)
@@ -95,11 +97,15 @@ def main():
                 reports = next(a for a in monitoring["project"]["activities"] if a["id"] == activity["id"])["reports"]
                 assert [r["actualCost"] for r in reports] == [0, 20, 40]
                 assert all(r["evidence"] == ["foto://avance"] and r["documents"] == ["acta://avance"] and r["actor"] == "local-demonstration" for r in reports)
-                with sqlite3.connect(database) as db:
-                    assert db.execute("SELECT COUNT(*) FROM ReconstructionReports").fetchone()[0] == 4
-                    assert db.execute("SELECT COUNT(*) FROM ReconstructionAudit").fetchone()[0] == 8
-                    assert db.execute("SELECT COUNT(*) FROM OutboxMessages").fetchone()[0] == 8
-                    assert db.execute("PRAGMA foreign_key_check").fetchall() == []
+                with closing(psycopg2.connect(database)) as connection, connection.cursor() as db:
+                    db.execute('SELECT COUNT(*) FROM "ReconstructionReports"')
+                    assert db.fetchone()[0] == 4
+                    db.execute('SELECT COUNT(*) FROM "ReconstructionAudit"')
+                    assert db.fetchone()[0] == 8
+                    db.execute('SELECT COUNT(*) FROM "OutboxMessages"')
+                    assert db.fetchone()[0] == 8
+                    db.execute('SELECT (SELECT COUNT(*) FROM reconstruction."ReconstructionReports" r LEFT JOIN reconstruction."ReconstructionActivities" a ON r."ActivityId"=a."Id" WHERE a."Id" IS NULL) + (SELECT COUNT(*) FROM reconstruction."ReconstructionActivities" a LEFT JOIN reconstruction."ReconstructionProjects" p ON a."ProjectId"=p."Id" WHERE p."Id" IS NULL)')
+                    assert db.fetchone()[0] == 0
                 for asset in ["/monitoring.html", "/monitoring.js", "/monitoring.css"]:
                     call(asset)
                 print("OK: reportes completos, estados, costos acumulados, trazabilidad, concurrencia HTTP y persistencia tras reinicio.")

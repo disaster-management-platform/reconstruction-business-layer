@@ -24,27 +24,26 @@ namespace Reconstruction.Tests;
 
 public sealed class HttpSecurityTests : IDisposable
 {
-    private readonly string _folder = Path.Combine(Path.GetTempPath(), "reconstruction-security-" + Guid.NewGuid());
+    private readonly PostgresDatabase _database = new();
     private static readonly SymmetricSecurityKey Key = new(Encoding.UTF8.GetBytes("test-only-key-never-for-deployment-0123456789-abcdefghijklmnopqrstuv"));
     private WebApplicationFactory<Program> App()
     {
-        Directory.CreateDirectory(_folder);
+        Platform.DAL.PlatformDatabase.MigrateAsync(_database.ConnectionString).GetAwaiter().GetResult();
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Testing");
+            builder.UseSetting("ConnectionStrings:Disasters", _database.ConnectionString);
             builder.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:Disasters"] = $"Data Source={Path.Combine(_folder, "test.db")};Pooling=False",
+                ["ConnectionStrings:Disasters"] = _database.ConnectionString,
                 ["Messaging:Enabled"] = "false", ["Reconstruction:DemoExternalData"] = "true",
                 ["Security:LocalDemo"] = "false", ["Security:Authority"] = "https://identity.test", ["Security:Audience"] = "platform"
             }));
             builder.ConfigureServices(services =>
             {
-                services.RemoveAll<DbContextOptions<DisasterDbContext>>();
                 services.RemoveAll<DbContextOptions<ReconstructionDbContext>>();
-                var connection = $"Data Source={Path.Combine(_folder, "test.db")};Pooling=False";
-                services.AddDbContext<DisasterDbContext>(o => o.UseSqlite(connection, x => x.MigrationsHistoryTable(Platform.DAL.PlatformDatabase.DisasterHistory)));
-                services.AddDbContext<ReconstructionDbContext>(o => o.UseSqlite(connection, x => x.MigrationsHistoryTable(Platform.DAL.PlatformDatabase.ReconstructionHistory)));
+                var connection = _database.ConnectionString;
+                services.AddDbContext<ReconstructionDbContext>(o => o.UseNpgsql(connection, x => x.MigrationsHistoryTable(Platform.DAL.PlatformDatabase.ReconstructionHistory, Platform.DAL.PlatformDatabase.ReconstructionSchema)));
                 foreach (var worker in services.Where(d => d.ServiceType == typeof(IHostedService)
                     && d.ImplementationType?.Namespace?.StartsWith("Reconstruction.Infrastructure.Messaging") == true).ToArray()) services.Remove(worker);
                 services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
@@ -103,5 +102,5 @@ public sealed class HttpSecurityTests : IDisposable
         Authenticate(client, "reconstruction.write", localDemoClaim: localDemoClaim);
         Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync("/api/reconstruccion/propuestas/generar", new { disasterId = 2 })).StatusCode);
     }
-    public void Dispose() { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); if (Directory.Exists(_folder)) Directory.Delete(_folder, true); }
+    public void Dispose() => _database.Dispose();
 }

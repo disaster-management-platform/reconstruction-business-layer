@@ -122,12 +122,11 @@ public sealed class ProjectMonitoringDomainTests
 
 public sealed class ProjectMonitoringPersistenceTests : IDisposable
 {
-    private readonly string _folder = Path.Combine(Path.GetTempPath(), "monitoring-" + Guid.NewGuid());
-    public ProjectMonitoringPersistenceTests() => Directory.CreateDirectory(_folder);
+    private readonly PostgresDatabase _database = new();
 
     private async Task<(ServiceProvider Provider, Guid Id)> SeedAsync()
     {
-        var services = new ServiceCollection().AddPlatformDal($"Data Source={Path.Combine(_folder, "disasters.db")};Pooling=False");
+        var services = new ServiceCollection().AddPlatformDal(_database.ConnectionString);
         services.AddSingleton<IReportAttachmentVerifier, TestAttachments>();
         services.AddSingleton<IReportAttachmentVerifier, TestAttachments>().AddScoped<ProjectMonitoringService>();
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
@@ -241,5 +240,5 @@ public sealed class ProjectMonitoringPersistenceTests : IDisposable
             request with { ActualCost = 20m, ExpectedVersion = first.Version }, "operador", default));
     }
 
-    public void Dispose() => Directory.Delete(_folder, recursive: true);
+    public void Dispose() => _database.Dispose();
 }
