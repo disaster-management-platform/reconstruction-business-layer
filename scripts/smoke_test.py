@@ -20,6 +20,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
+BACKEND = Path(os.environ.get("BACKEND_PROJECT_PATH", ROOT.parent / "disaster-backend-offline/DisasterLocation"))
 
 
 @contextmanager
@@ -51,7 +52,7 @@ def postgres_connection_string(database):
 
 
 def migrate_database(database, log):
-    project = ROOT / "DisasterLocation"
+    project = BACKEND
     subprocess.run(["dotnet", str(project / "bin/Debug/net10.0/DisasterLocation.dll"), "--Database:Migrate=true"],
         cwd=project, env={**os.environ, "ConnectionStrings__Disasters": postgres_connection_string(database)},
         stdout=log, stderr=log, check=True, timeout=60)
@@ -93,7 +94,7 @@ def wait_ready(base, path, process):
 
 
 def start(project, port, env, log):
-    folder = ROOT / project
+    folder = BACKEND if project == "DisasterLocation" else ROOT / project
     process_env = {**os.environ, "ASPNETCORE_ENVIRONMENT": "Development", "Security__LocalDemo": "true", **env}
     if project == "DisasterLocation.Gateway":
         folder = Path(os.environ.get("GATEWAY_PROJECT_PATH", ROOT.parent / "disaster-api-gateway" / project))

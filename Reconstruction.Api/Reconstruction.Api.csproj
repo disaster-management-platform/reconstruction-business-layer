@@ -11,7 +11,7 @@
     <ProjectReference Include="../Reconstruction.Infrastructure/Reconstruction.Infrastructure.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
   </ItemGroup>
-  <ItemGroup><ProjectReference Include="../Platform.Security/Platform.Security.csproj" /></ItemGroup>
+  <ItemGroup><PackageReference Include="DisasterPlatform.Security" Version="1.0.0" /></ItemGroup>
   <ItemGroup>
     <PackageReference Include="DisasterPlatform.Core" Version="1.0.0" />
   </ItemGroup>

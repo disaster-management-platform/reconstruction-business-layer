@@ -84,14 +84,14 @@ Se genera un reporte consolidado de la ejecución y se libera el presupuesto no 
 
 ## Ejecución
 
-Se requiere .NET 10 y autenticación NuGet para GitHub Packages. Configura las conexiones desde archivos locales protegidos fuera de Git. Cada archivo debe contener una cadena Npgsql con usuario propio, `SSL Mode=VerifyFull` y la CA confiable para conexiones TCP:
+Se requiere .NET 10 y autenticación NuGet para GitHub Packages. Configura la conexión desde un archivo local protegido fuera de Git. El archivo de Reconstrucción debe contener una cadena Npgsql con su usuario propio, `SSL Mode=VerifyFull` y la CA confiable para conexiones TCP:
 
 ```bash
-export DISASTERS_CONNECTION_STRING="$(cat "$DISASTERS_CONNECTION_FILE")"
 export RECONSTRUCTION_CONNECTION_STRING="$(cat "$RECONSTRUCTION_CONNECTION_FILE")"
+export ExternalApis__Disasters=http://localhost:5156/
 ```
 
-`DISASTERS_CONNECTION_FILE` corresponde a la API ampliada; `RECONSTRUCTION_CONNECTION_FILE`, a Reconstrucción. `run_local.py` entrega cada valor como `ConnectionStrings__Disasters` exclusivamente a su proceso. No transmite conexiones PostgreSQL al Gateway ni utiliza la conexión genérica heredada como sustituto.
+`run_local.py` inicia únicamente Reconstrucción y el Gateway; transmite `ConnectionStrings__Disasters` solo a Reconstrucción. Gestión de Desastres se inicia desde `disaster-backend-offline` y se consulta por `ExternalApis__Disasters`. El Gateway no recibe credenciales PostgreSQL.
 
 Compilar la solución y el Gateway:
 
@@ -107,7 +107,7 @@ Las migraciones se aplican explícitamente antes de ejecutar los servicios, con 
 
 ```bash
 ConnectionStrings__Disasters="$(cat "$MIGRATION_CONNECTION_FILE")" \
-  dotnet run --project DisasterLocation --no-launch-profile -- --Database:Migrate=true
+  dotnet run --project ../disaster-backend-offline/DisasterLocation --no-launch-profile -- --Database:Migrate=true
 ```
 
 Iniciar los procesos con sus credenciales de ejecución:
@@ -116,7 +116,7 @@ Iniciar los procesos con sus credenciales de ejecución:
 python3 scripts/run_local.py --demo
 ```
 
-El arranque normal de ambas APIs no aplica migraciones. No utilices la conexión administrativa en las variables de ejecución. En Supabase, ambas APIs de desastres conservan permisos de solo lectura hasta decidir el propietario de escritura; `--demo` no cambia esos permisos. Las dos migraciones incrementales `ProtectDisastersReferences` y `ProtectReconstructionReferences` están pendientes de aplicación en Supabase.
+El arranque normal no aplica migraciones. No utilices la conexión administrativa para ejecutar la API. Gestión de Desastres es el único escritor de `disasters`; Reconstrucción solo escribe en `reconstruction` y conserva su integración HTTP `IDisasterReader`/`DisasterHttpReader`. Las políticas JWT y los permisos por desastre proceden de `DisasterPlatform.Security 1.0.0`.
 
 Para habilitar la comunicación mediante RabbitMQ:
 
@@ -178,7 +178,7 @@ Las pruebas cubren reglas de negocio, persistencia, concurrencia, seguridad, int
 ## Trabajo futuro
 
 - Integración con los módulos de Evaluación de Daños, Donaciones e Identidad.
-- Decisión sobre el propietario de escritura de Gestión de Desastres y la integridad adicional entre esquemas.
+- Ampliación funcional de Gestión de Desastres según el enunciado, conservando el propietario único.
 - Almacenamiento compartido de evidencias y documentos.
 - Redundancia de componentes y validación de los escenarios de alta disponibilidad.
 - Pruebas de carga para los escenarios de escalabilidad establecidos en los requisitos del sistema.
