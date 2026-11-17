@@ -137,6 +137,7 @@ def main():
                         'ExternalApis__Disasters': api + '/', 'ExternalApis__DamageAssessments__BaseUrl': external,
                         'ExternalApis__Funding__BaseUrl': external, 'Attachments__Directory': str(Path(folder) / 'attachments')}, log)
                     wait_ready(reconstruction, '/api/reconstruccion/health', processes[1])
+                    wait_ready(gateway, '/api/reconstruccion/health', processes[2])
                     assert call(path + '/reporte-final') == final
                     print('OK: contratos HTTP, fases, reparto exacto, financiación, auditoría completa, presupuesto, adjuntos, idempotencia, cierre y reinicio.')
                 except BaseException:

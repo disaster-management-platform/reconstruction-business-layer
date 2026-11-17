@@ -1,6 +1,6 @@
 # Arquitectura
 
-Gateway YARP → API → IReconstructionFacade → casos de uso → entidades y políticas.
+Gateway YARP con frontend único y rutas base de ambos módulos → API → IReconstructionFacade → casos de uso → entidades y políticas.
 
 ![arquitectura.png](arquitectura.png)
 

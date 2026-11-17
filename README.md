@@ -91,7 +91,7 @@ export RECONSTRUCTION_CONNECTION_STRING="$(cat "$RECONSTRUCTION_CONNECTION_FILE"
 export ExternalApis__Disasters=http://localhost:5156/
 ```
 
-`run_local.py` inicia únicamente Reconstrucción y el Gateway; transmite `ConnectionStrings__Disasters` solo a Reconstrucción. Gestión de Desastres se inicia desde `disaster-backend-offline` y se consulta por `ExternalApis__Disasters`. El Gateway no recibe credenciales PostgreSQL.
+`run_local.py` inicia únicamente Reconstrucción y el Gateway; transmite `ConnectionStrings__Disasters` solo a Reconstrucción. Gestión de Desastres se inicia desde `disaster-backend-offline` y se consulta por `ExternalApis__Disasters`. El Gateway no recibe credenciales PostgreSQL. Su configuración base ofrece ambos módulos y un único frontend, sin el perfil funcional `Reconstruction`.
 
 Compilar la solución y el Gateway:
 

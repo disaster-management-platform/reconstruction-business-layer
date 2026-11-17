@@ -28,6 +28,7 @@ class RunLocalTests(unittest.TestCase):
         self.assertEqual(2, len(calls))
         for call, expected in zip(calls, [reconstruction, None]):
             environment = call.kwargs["env"]
+            self.assertEqual("Development", environment["ASPNETCORE_ENVIRONMENT"])
             self.assertEqual(expected, environment.get("ConnectionStrings__Disasters"))
             for key in ["DISASTERS_CONNECTION_STRING", "RECONSTRUCTION_CONNECTION_STRING", "MIGRATION_CONNECTION_STRING",
                         "PGPASSWORD", "Database__Migrate", "DOTNET_Database__Migrate"]:

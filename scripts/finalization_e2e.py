@@ -95,6 +95,7 @@ def main():
                 stop(reconstruction)
                 reconstruction = start("Reconstruction.Api", r, reconstruction_env, log); processes.append(reconstruction)
                 wait_ready(reconstruction_url, "/api/reconstruccion/health", reconstruction)
+                wait_ready(gateway_url, "/api/reconstruccion/health", gateway)
                 assert final == call(path + "/reporte-final")
 
                 # Legacy Completed states without final reports must not allow closure.

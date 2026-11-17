@@ -28,7 +28,6 @@ try:
         process_env = {**env}
         if project == 'DisasterLocation.Gateway':
             folder = Path(os.environ.get('GATEWAY_PROJECT_PATH', root.parent / 'disaster-api-gateway' / project))
-            process_env['ASPNETCORE_ENVIRONMENT'] = 'Reconstruction'
             for cluster, address in [('disasters-api', disasters_url), ('reconstruction-api', 'http://localhost:5160/')]:
                 prefix = f'ReverseProxy__Clusters__{cluster}__Destinations__'
                 if not any(key.replace(':', '__').lower().startswith(prefix.lower()) for key in env):

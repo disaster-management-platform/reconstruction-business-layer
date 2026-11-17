@@ -98,7 +98,6 @@ def start(project, port, env, log):
     process_env = {**os.environ, "ASPNETCORE_ENVIRONMENT": "Development", "Security__LocalDemo": "true", **env}
     if project == "DisasterLocation.Gateway":
         folder = Path(os.environ.get("GATEWAY_PROJECT_PATH", ROOT.parent / "disaster-api-gateway" / project))
-        process_env["ASPNETCORE_ENVIRONMENT"] = "Reconstruction"
     dll = folder / "bin/Debug/net10.0" / f"{project}.dll"
     return subprocess.Popen(
         ["dotnet", str(dll), "--urls", f"http://127.0.0.1:{port}"],
