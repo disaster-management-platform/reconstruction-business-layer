@@ -5,4 +5,7 @@
     <Nullable>enable</Nullable>
     
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="DisasterPlatform.Core" Version="1.0.0" />
+  </ItemGroup>
 </Project>

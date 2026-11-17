@@ -2,6 +2,7 @@
 from contextlib import closing
 from pathlib import Path
 import re
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -27,7 +28,10 @@ class ConsolidationTests(unittest.TestCase):
                 INSERT INTO __EFMigrationsHistory VALUES ('20261106013504_AddOperationId', '10.0.14');
                 INSERT INTO __EFMigrationsHistory VALUES ('20261106013525_UseClientRequestId', '10.0.14');
             """)
-        migration = (Path(__file__).resolve().parents[1] / "Platform.DAL/Migrations/Reconstruction/202611130001_InitialReconstruction.cs").read_text()
+        assets = json.loads((Path(__file__).resolve().parents[1] / "Reconstruction.Tests/obj/project.assets.json").read_text())
+        package = next(value["path"] for name, value in assets["libraries"].items() if name.startswith("DisasterPlatform.DAL/"))
+        migration = next(Path(folder) / package / "contentFiles/any/any/Migrations/Reconstruction/202611130001_InitialReconstruction.cs"
+                         for folder in assets["packageFolders"] if (Path(folder) / package).is_dir()).read_text()
         sql = re.search(r'migrationBuilder.Sql\("""(.*?)"""\);', migration, re.S).group(1)
         with closing(sqlite3.connect(self.reconstruction)) as db:
             db.executescript(sql)

@@ -33,7 +33,7 @@ public sealed class DisasterHttpReaderTests
     public async Task ReadsDisasterSeverityUsingHttp(HttpStatusCode status, bool exists)
     {
         using var client = new HttpClient(new StubHandler(status)) { BaseAddress = new Uri("http://disasters.test/") };
-        Assert.Equal(exists ? new DisasterSnapshot(42, 4, Reconstruction.Domain.DisasterPhase.Recovery) : null, await new DisasterHttpReader(client, DisasterHttpResilience.Create()).GetAsync(42, default));
+        Assert.Equal(exists ? new DisasterSnapshot(42, 4, DisasterLocation.Core.DisasterPhase.Recovery) : null, await new DisasterHttpReader(client, DisasterHttpResilience.Create()).GetAsync(42, default));
     }
 
     [Fact]

@@ -46,6 +46,39 @@ public sealed class PlatformPersistenceTests : IDisposable
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IReconstructionHistoryReader>());
     }
 
+    [Fact]
+    public async Task OriginalDisasterRegistrationPreservesItsHistoryAndClientRequestId()
+    {
+        var requestId = Guid.NewGuid();
+        await using (var legacy = new DisasterDbContext(new DbContextOptionsBuilder<DisasterDbContext>()
+            .UseSqlite(ConnectionString).Options))
+        {
+            await legacy.GetService<IMigrator>().MigrateAsync(DisasterMigrations[^1]);
+            await legacy.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO Desastres(Id, ClientRequestId, Nombre, Ubicacion, Severidad, Descripcion, Latitud, Longitud)
+                VALUES(42, {requestId}, 'Reporte histórico', 'Bogotá', 4, 'Conservar', 4.71, -74.07);
+                """);
+        }
+        await using var services = DisasterLocation.DAL.DependencyInjection.AddDataAccess(
+            new ServiceCollection(), ConnectionString, _folder).BuildServiceProvider();
+        await DisasterLocation.DAL.DependencyInjection.InitializeDataAccessAsync(services);
+        await DisasterLocation.DAL.DependencyInjection.InitializeDataAccessAsync(services);
+        await using var scope = services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<DisasterDbContext>();
+        var record = await scope.ServiceProvider.GetRequiredService<IDisasterRepository>()
+            .GetByClientRequestIdAsync(requestId);
+        Assert.NotNull(record);
+        Assert.Equal(42, record.Id);
+        Assert.Null(record.Radio);
+        Assert.Equal(DisasterPhase.Registered, record.Phase);
+        Assert.Equal(1, record.Version);
+        Assert.Equal(context.Database.GetMigrations(), await context.Database.GetAppliedMigrationsAsync());
+        Assert.Empty(await context.PhaseAudit.ToListAsync());
+        Assert.Null(scope.ServiceProvider.GetService<ReconstructionDbContext>());
+        Assert.Equal(0, await context.Database.SqlQueryRaw<int>(
+            "SELECT COUNT(*) AS Value FROM sqlite_master WHERE name = '__EFMigrationsHistory_Disaster'").SingleAsync());
+    }
+
     [Theory]
     [InlineData(1, false)]
     [InlineData(2, false)]

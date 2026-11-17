@@ -9,4 +9,7 @@
     <ProjectReference Include="../Reconstruction.Domain/Reconstruction.Domain.csproj" />
 
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="DisasterPlatform.Core" Version="1.0.0" />
+  </ItemGroup>
 </Project>

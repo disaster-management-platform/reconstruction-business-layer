@@ -103,7 +103,7 @@ public sealed class DisasterCircuitBreakerTests
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => request);
         }
         cancelRequests = false;
-        Assert.Equal(new DisasterSnapshot(42, 4, Reconstruction.Domain.DisasterPhase.Recovery), await reader.GetAsync(42, default));
+        Assert.Equal(new DisasterSnapshot(42, 4, DisasterLocation.Core.DisasterPhase.Recovery), await reader.GetAsync(42, default));
         Assert.Equal(6, handler.Calls);
     }
 
@@ -137,8 +137,8 @@ public sealed class DisasterCircuitBreakerTests
         Assert.IsType<BrokenCircuitException>((await Assert.ThrowsAsync<DependencyUnavailableException>(Call)).InnerException);
         Assert.Equal(6, handler.Calls);
         clock.Advance(TimeSpan.FromSeconds(15)); status = HttpStatusCode.OK;
-        Assert.Equal(new DisasterSnapshot(42, 4, Reconstruction.Domain.DisasterPhase.Recovery), await Call());
-        Assert.Equal(new DisasterSnapshot(42, 4, Reconstruction.Domain.DisasterPhase.Recovery), await Call());
+        Assert.Equal(new DisasterSnapshot(42, 4, DisasterLocation.Core.DisasterPhase.Recovery), await Call());
+        Assert.Equal(new DisasterSnapshot(42, 4, DisasterLocation.Core.DisasterPhase.Recovery), await Call());
         Assert.Equal(8, handler.Calls);
     }
 
@@ -164,7 +164,7 @@ public sealed class DisasterCircuitBreakerTests
         var blocked = await Assert.ThrowsAsync<DependencyUnavailableException>(() => reader.GetAsync(42, default));
         Assert.IsType<BrokenCircuitException>(blocked.InnerException); Assert.Equal(6, handler.Calls);
         probeResult.SetResult(Response());
-        Assert.Equal(new DisasterSnapshot(42, 4, Reconstruction.Domain.DisasterPhase.Recovery), await probe);
+        Assert.Equal(new DisasterSnapshot(42, 4, DisasterLocation.Core.DisasterPhase.Recovery), await probe);
     }
 
     private sealed class Handler(Func<CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler

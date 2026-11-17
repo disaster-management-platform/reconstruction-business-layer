@@ -343,7 +343,7 @@ public sealed class ProjectFormalizationPersistenceTests : IDisposable
     private sealed class AssessmentSource : IDisasterReader, IDamageAssessmentReader
     {
         public List<DamageAssessment> Evaluations { get; } = [];
-        public Task<DisasterSnapshot?> GetAsync(int disasterId, CancellationToken ct) => Task.FromResult<DisasterSnapshot?>(new(disasterId, 4, Reconstruction.Domain.DisasterPhase.Recovery));
+        public Task<DisasterSnapshot?> GetAsync(int disasterId, CancellationToken ct) => Task.FromResult<DisasterSnapshot?>(new(disasterId, 4, DisasterLocation.Core.DisasterPhase.Recovery));
         public Task<IReadOnlyList<DamageAssessment>> GetForDisasterAsync(int disasterId, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<DamageAssessment>>(Evaluations.Where(e => e.DisasterId == disasterId).ToArray());
     }
