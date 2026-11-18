@@ -184,3 +184,9 @@ Las pruebas cubren reglas de negocio, persistencia, concurrencia, seguridad, int
 - Almacenamiento compartido de evidencias y documentos.
 - Redundancia de componentes y validación de los escenarios de alta disponibilidad.
 - Pruebas de carga para los escenarios de escalabilidad establecidos en los requisitos del sistema.
+
+## Keycloak service credentials
+
+Inbound JWT uses `Security__Authority` (HTTPS issuer), `Security__Audience=reconstruction-api` and existing subject/organization/disaster/role policies. For `ExternalApis__Disasters__OAuth`, `ExternalApis__DamageAssessments__OAuth` (and a supported Funding provider), configure `TokenEndpoint`, `ClientId`, `ClientSecret` externally. Tokens are cached and acquired before expiry; a 401 invalidates the token for the next operation without replaying mutations. The token endpoint requires HTTPS, has a three-second timeout, a 64 KiB response limit and no redirects. Provision separate least-privilege clients and audience grants. Existing bearer configuration remains for providers not migrated to OAuth; OAuth replaces it on outgoing requests when configured. Financial rules/providers are unchanged.
+
+Run `dotnet test Reconstruction.Tests --filter FullyQualifiedName~ClientCredentialsTests`. The real-issuer check runs only with `SECURITY_OAUTH_ENDPOINT`, `SECURITY_OAUTH_CLIENT`, `SECURITY_OAUTH_SECRET` and trusted CA configuration. Its isolated test client must have a five-second token lifespan. It verifies caching and renewal, not domain eligibility.

@@ -31,6 +31,8 @@ public static class DependencyInjection
     {
         if (configuration.GetValue<bool>("Reconstruction:DemoExternalData") && !environment.IsDevelopment())
             throw new InvalidOperationException("Reconstruction:DemoExternalData solo está permitido en Development.");
+        services.AddHttpClient("oauth", client => { client.Timeout = TimeSpan.FromSeconds(3); client.MaxResponseContentBufferSize = 65536; })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         services.AddScoped<ProposalDefinitionService>();
         services.AddScoped<FundingService>();
         services.AddScoped<ProposalReconciliationService>();
@@ -55,17 +57,17 @@ public static class DependencyInjection
         {
             client.BaseAddress = new Uri(configuration["ExternalApis:Disasters"] ?? "http://localhost:5156/");
             client.Timeout = TimeSpan.FromSeconds(4);
-        });
+        }).AddHttpMessageHandler(p => new ClientCredentialsHandler(p.GetRequiredService<IHttpClientFactory>(), configuration, "Disasters"));
 
         if (configuration.GetValue<bool>("Reconstruction:DemoExternalData")
             && string.IsNullOrWhiteSpace(configuration["ExternalApis:DamageAssessments:BaseUrl"]))
             services.AddScoped<IDamageAssessmentReader, DemoDamageAssessmentReader>();
         else
-            services.AddHttpClient<IDamageAssessmentReader, DamageAssessmentHttpReader>(c => ConfigureExternal(c, configuration, "DamageAssessments"));
+            services.AddHttpClient<IDamageAssessmentReader, DamageAssessmentHttpReader>(c => ConfigureExternal(c, configuration, "DamageAssessments")).AddHttpMessageHandler(p => new ClientCredentialsHandler(p.GetRequiredService<IHttpClientFactory>(), configuration, "DamageAssessments"));
         if (configuration.GetValue<bool>("Reconstruction:DemoExternalData"))
             services.AddScoped<IFundingReader, DemoFundingReader>();
         else
-            services.AddHttpClient<IFundingReader, FundingHttpReader>(c => ConfigureExternal(c, configuration, "Funding"));
+            services.AddHttpClient<IFundingReader, FundingHttpReader>(c => ConfigureExternal(c, configuration, "Funding")).AddHttpMessageHandler(p => new ClientCredentialsHandler(p.GetRequiredService<IHttpClientFactory>(), configuration, "Funding"));
 
         services.AddOptions<RabbitMqOptions>().Bind(configuration.GetSection("Messaging"))
             .Validate(o => o.MaxDeliveryAttempts is >= 1 and <= 10
