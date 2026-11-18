@@ -6,7 +6,7 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="DisasterPlatform.DAL" Version="5.0.0" />
+    <PackageReference Include="DisasterPlatform.DAL" Version="5.1.0" />
     <ProjectReference Include="../Reconstruction.Infrastructure/Reconstruction.Infrastructure.csproj" />
     <ProjectReference Include="../Reconstruction.Domain/Reconstruction.Domain.csproj" />
     <ProjectReference Include="../Reconstruction.Application/Reconstruction.Application.csproj" />

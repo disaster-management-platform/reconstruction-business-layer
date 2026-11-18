@@ -6,7 +6,7 @@
     
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="DisasterPlatform.DAL" Version="5.0.0" />
+    <PackageReference Include="DisasterPlatform.DAL" Version="5.1.0" />
     <ProjectReference Include="../Reconstruction.Application/Reconstruction.Application.csproj" />
     <ProjectReference Include="../Reconstruction.Infrastructure/Reconstruction.Infrastructure.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
