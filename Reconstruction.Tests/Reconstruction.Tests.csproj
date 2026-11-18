@@ -6,7 +6,7 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="DisasterPlatform.DAL" Version="3.0.0" />
+    <PackageReference Include="DisasterPlatform.DAL" Version="4.0.0" />
     <ProjectReference Include="../Reconstruction.Infrastructure/Reconstruction.Infrastructure.csproj" />
     <ProjectReference Include="../Reconstruction.Domain/Reconstruction.Domain.csproj" />
     <ProjectReference Include="../Reconstruction.Application/Reconstruction.Application.csproj" />
@@ -17,6 +17,6 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="DisasterPlatform.Core" Version="2.0.0" />
+    <PackageReference Include="DisasterPlatform.Core" Version="3.0.0" />
   </ItemGroup>
 </Project>
