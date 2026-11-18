@@ -30,7 +30,7 @@ Se exige COP y una observación de hasta cinco minutos de antigüedad. Los presu
 
 Se conservan GET/POST de `/api/desastres`, Idempotency-Key y semántica 201/200/409. Radio es opcional y se conserva. GET añade phase y version; los clientes antiguos ignoran campos nuevos.
 
-`PUT /api/desastres/42/fase` recibe `{"phase":"Recovery","expectedVersion":2}` y exige permiso de escritura y acceso al desastre. La transición se audita atómicamente. El backend anterior debe actualizarse a esta versión para proveer fase; una respuesta sin ella no habilita reconstrucción.
+`PUT /api/desastres/42/fase` recibe `phase`, `expectedVersion` y, al omitir etapas, `reason`; exige permiso de escritura y acceso al desastre. Cerrar requiere además `confirmNoCriticalCommitments=true`. La transición se audita atómicamente. Recovery y Reconstruction habilitan nuevas propuestas y proyectos; Closed conserva la consulta y finalización de proyectos históricos. Una respuesta sin fase válida no habilita reconstrucción.
 
 ## Comandos de reconstrucción
 

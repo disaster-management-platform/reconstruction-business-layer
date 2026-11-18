@@ -17,7 +17,7 @@ public sealed class ProposalReconciliationService(IDisasterReader disasters, IDa
         if (disasterId <= 0) throw new DomainException("El identificador de desastre debe ser positivo.");
         var disaster = await disasters.GetAsync(disasterId, ct)
             ?? throw new MissingResourceException("Desastre no encontrado.");
-        if (disaster.Phase is not (DisasterPhase.Recovery or DisasterPhase.Closed))
+        if (disaster.Phase is not (DisasterPhase.Recovery or DisasterPhase.Reconstruction))
             throw new BusinessConflictException("La reconstrucción requiere que haya finalizado la fase de respuesta.");
         var damage = await assessments.GetForDisasterAsync(disasterId, ct);
 

@@ -217,13 +217,14 @@ public sealed class PlatformPersistenceTests : IDisposable
         await using var scope = services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<DisasterDbContext>();
         await db.GetService<IMigrator>().MigrateAsync("20261117163129_PostgreSqlDisasters");
-        var disaster = new Disaster { Nombre = "Reporte", Ubicacion = "Bogotá", Severidad = 4,
-            Descripcion = "Conservar", Latitud = 4.71, Longitud = -74.07 };
-        db.Disasters.Add(disaster); await db.SaveChangesAsync();
-        Assert.True(await scope.ServiceProvider.GetRequiredService<IDisasterRepository>().ChangePhaseAsync(disaster.Id,
-            DisasterPhase.Registered, DisasterPhase.Response, 1, "operador", default));
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO disasters."Desastres" ("Id","Nombre","Ubicacion","Severidad","Descripcion","Latitud","Longitud","Phase","Version")
+            VALUES (1,'Reporte','Bogotá',4,'Conservar',4.71,-74.07,1,2);
+            INSERT INTO disasters."DisasterPhaseAudit" ("Id","DisasterId","Before","After","Version","Actor","OccurredAt")
+            VALUES ('00000000-0000-0000-0000-000000000001',1,0,1,2,'operador',TIMESTAMPTZ '2026-11-17 12:00:00+00');
+            """);
         await db.Database.MigrateAsync(); db.ChangeTracker.Clear();
-        Assert.Equal(disaster.Id, (await db.PhaseAudit.SingleAsync()).DisasterId);
+        Assert.Equal(1, (await db.PhaseAudit.SingleAsync()).DisasterId);
         Assert.Equal(2, (await db.Disasters.SingleAsync()).Version);
         db.ChangeTracker.Clear();
         db.Disasters.Remove(await db.Disasters.SingleAsync());

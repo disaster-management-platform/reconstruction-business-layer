@@ -6,13 +6,13 @@
     
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="DisasterPlatform.DAL" Version="2.0.1" />
+    <PackageReference Include="DisasterPlatform.DAL" Version="3.0.0" />
     <ProjectReference Include="../Reconstruction.Application/Reconstruction.Application.csproj" />
     <ProjectReference Include="../Reconstruction.Infrastructure/Reconstruction.Infrastructure.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
   </ItemGroup>
   <ItemGroup><PackageReference Include="DisasterPlatform.Security" Version="1.0.0" /></ItemGroup>
   <ItemGroup>
-    <PackageReference Include="DisasterPlatform.Core" Version="1.0.0" />
+    <PackageReference Include="DisasterPlatform.Core" Version="2.0.0" />
   </ItemGroup>
 </Project>

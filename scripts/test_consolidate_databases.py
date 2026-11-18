@@ -20,13 +20,13 @@ class DatabaseInitializationTests(unittest.TestCase):
         migrate_database(self.database, self.log)
         self.cursor.execute("SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema IN ('disasters','reconstruction')")
         tables = set(self.cursor.fetchall())
-        self.assertEqual({("disasters", t) for t in ["Desastres", "DisasterPhaseAudit", "__EFMigrationsHistory_Disaster"]}
+        self.assertEqual({("disasters", t) for t in ["Desastres", "DisasterTypes", "DisasterPhaseAudit", "__EFMigrationsHistory_Disaster"]}
             | {("reconstruction", t) for t in ["ReconstructionProposals", "ReconstructionProjects", "ReconstructionActivities",
                 "ReconstructionReports", "ReconstructionFundingReservations", "ReconstructionWorkflow", "OutboxMessages", "InboxMessages",
                 "ReconstructionAudit", "ReconstructionTimeline", "__EFMigrationsHistory_Reconstruction"]}, tables)
         for schema, history in [("disasters", "__EFMigrationsHistory_Disaster"), ("reconstruction", "__EFMigrationsHistory_Reconstruction")]:
             self.cursor.execute(f'SELECT "MigrationId" FROM {schema}."{history}"')
-            self.assertEqual(2, len(self.cursor.fetchall()))
+            self.assertEqual(3 if schema == "disasters" else 2, len(self.cursor.fetchall()))
 
     def test_uniqueness_failure_rolls_back_all_writes(self):
         self.cursor.execute('''INSERT INTO disasters."Desastres" ("Nombre","Ubicacion","Severidad","Descripcion","Latitud","Longitud") VALUES ('Keep','Bogota',4,'Keep',0,0) RETURNING "Id"''')

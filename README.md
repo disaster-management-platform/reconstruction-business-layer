@@ -14,8 +14,10 @@ El sistema sigue una arquitectura orientada a servicios con arquitectura hexagon
 - **Domain:** entidades, estados, políticas y reglas de negocio.
 - **Application:** servicios de negocio, casos de uso e interfaces de comunicación.
 - **Infrastructure:** adaptadores HTTP, mensajería y almacenamiento de archivos.
-- **DAL:** `DisasterPlatform.DAL 2.0.1`, con Entity Framework Core y PostgreSQL. Los esquemas `disasters` y `reconstruction` mantienen sus propios repositorios y contextos.
+- **DAL:** `DisasterPlatform.Core 2.0.0` y `DisasterPlatform.DAL 3.0.0`, con Entity Framework Core y PostgreSQL. Los esquemas `disasters` y `reconstruction` mantienen sus propios repositorios y contextos.
 - **API Gateway:** implementado con YARP para centralizar el acceso a los módulos y servir la interfaz web.
+
+Las nuevas propuestas y proyectos requieren que el desastre esté en Recovery o Reconstruction. Closed permite consultar y finalizar proyectos históricos, sin generar proyectos nuevos ni reclasificar automáticamente el desastre. Las fases se consultan mediante HTTP al servicio propietario.
 
 El patrón Facade proporciona un punto de acceso a los servicios de Reconstrucción. La colaboración asíncrona se realiza mediante RabbitMQ, utilizando eventos tipados y colas independientes por consumidor.
 

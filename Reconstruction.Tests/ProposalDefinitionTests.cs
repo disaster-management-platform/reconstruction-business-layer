@@ -132,17 +132,38 @@ public sealed class ProposalDefinitionTests : IDisposable
         Assert.Equal(1, await reloaded.ServiceProvider.GetRequiredService<ReconstructionDbContext>().OutboxMessages.CountAsync());
     }
 
-    [Fact]
-    public async Task ResponsePhaseDoesNotReadEvaluationsOrGenerateProposals()
+    [Theory]
+    [InlineData(DisasterPhase.Detected)]
+    [InlineData(DisasterPhase.Registered)]
+    [InlineData(DisasterPhase.Assessment)]
+    [InlineData(DisasterPhase.Response)]
+    [InlineData(DisasterPhase.Closed)]
+    public async Task UnsupportedPhasesDoNotReadEvaluationsOrGenerateProposals(DisasterPhase phase)
     {
         var reader = new MutableAssessmentReader { Evaluations = [ProposalPolicyTests.Evaluation()] };
-        await using var services = await ServicesAsync(phase: DisasterPhase.Response, assessments: reader);
+        await using var services = await ServicesAsync(phase: phase, assessments: reader);
         await using var scope = services.CreateAsyncScope();
         await Assert.ThrowsAsync<BusinessConflictException>(() => scope.ServiceProvider.GetRequiredService<ProposalDefinitionService>().GenerateAsync(1, "operador", default));
         Assert.Equal(0, reader.Reads);
         var db = scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>();
         Assert.Empty(await db.Proposals.ToListAsync());
         Assert.Empty(await db.OutboxMessages.ToListAsync());
+    }
+
+    [Fact]
+    public async Task ReconstructionAllowsProjectsButClosedOnlyPreservesExistingOnes()
+    {
+        await using var services = await ServicesAsync(phase: DisasterPhase.Reconstruction);
+        await using var scope = services.CreateAsyncScope();
+        var definitions = scope.ServiceProvider.GetRequiredService<ProposalDefinitionService>();
+        var proposals = await definitions.GenerateAsync(1, "operador", default);
+        var formalization = scope.ServiceProvider.GetRequiredService<ProjectFormalizationService>();
+        var project = await formalization.CreateFromProposalAsync(proposals[0].Id, proposals[0].Version, "operador", default);
+        ((StubDisasterReader)services.GetRequiredService<IDisasterReader>()).Phase = DisasterPhase.Closed;
+        Assert.Equal(project.Id, (await formalization.CreateFromProposalAsync(proposals[0].Id, proposals[0].Version, "operador", default)).Id);
+        await Assert.ThrowsAsync<BusinessConflictException>(() => formalization.CreateFromProposalAsync(proposals[1].Id, proposals[1].Version, "operador", default));
+        Assert.Single(await scope.ServiceProvider.GetRequiredService<ReconstructionDbContext>().Projects.ToListAsync());
+        Assert.NotEmpty(await definitions.ListAsync(1, default));
     }
 
     [Theory]
@@ -502,8 +523,9 @@ public sealed class ProposalDefinitionTests : IDisposable
 
     private sealed class StubDisasterReader(bool exists, int severity, DisasterPhase phase) : IDisasterReader
     {
+        public DisasterPhase Phase { get; set; } = phase;
         public Task<DisasterSnapshot?> GetAsync(int disasterId, CancellationToken ct) =>
-            Task.FromResult(exists ? new DisasterSnapshot(disasterId, severity, phase) : null);
+            Task.FromResult(exists ? new DisasterSnapshot(disasterId, severity, Phase) : null);
     }
 
     private sealed class MutableAssessmentReader : IDamageAssessmentReader

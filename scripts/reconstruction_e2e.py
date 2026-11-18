@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 BASE = os.environ.get("PLATFORM_BASE_URL", "http://localhost:5080")
 
 def call(method, path, body=None, idempotency_key=None):
+    if method == "PUT" and path.endswith("/fase") and isinstance(body, dict):
+        body = {"reason": "Transición autorizada del escenario de reconstrucción", "confirmNoCriticalCommitments": True, **body}
     if body is not None and path.endswith('/reportes') and method == 'POST': body = {**body, 'requestId': str(uuid.uuid4())}
     headers = {"Content-Type":"application/json", "X-Actor":"e2e-test"}
     if idempotency_key: headers["Idempotency-Key"] = idempotency_key

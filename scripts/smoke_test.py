@@ -65,6 +65,8 @@ def free_port():
 
 
 def request(base, path="/api/desastres", method="GET", data=None, headers=None):
+    if method == "PUT" and path.endswith("/fase") and isinstance(data, dict):
+        data = {"reason": "Transición autorizada del escenario de integración", "confirmNoCriticalCommitments": True, **data}
     body = None if data is None else json.dumps(data).encode()
     request_headers = {"Content-Type": "application/json"} if body else {}
     request_headers.update(headers or {})
