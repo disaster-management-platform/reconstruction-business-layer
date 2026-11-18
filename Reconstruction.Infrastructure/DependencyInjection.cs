@@ -57,17 +57,15 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(4);
         });
 
-        if (configuration.GetValue<bool>("Reconstruction:DemoExternalData"))
-        {
+        if (configuration.GetValue<bool>("Reconstruction:DemoExternalData")
+            && string.IsNullOrWhiteSpace(configuration["ExternalApis:DamageAssessments:BaseUrl"]))
             services.AddScoped<IDamageAssessmentReader, DemoDamageAssessmentReader>();
-            services.AddScoped<IFundingReader, DemoFundingReader>();
-        }
         else
-        {
-            // Se mantiene el contrato; no se inventa la integración aún inexistente.
             services.AddHttpClient<IDamageAssessmentReader, DamageAssessmentHttpReader>(c => ConfigureExternal(c, configuration, "DamageAssessments"));
+        if (configuration.GetValue<bool>("Reconstruction:DemoExternalData"))
+            services.AddScoped<IFundingReader, DemoFundingReader>();
+        else
             services.AddHttpClient<IFundingReader, FundingHttpReader>(c => ConfigureExternal(c, configuration, "Funding"));
-        }
 
         services.AddOptions<RabbitMqOptions>().Bind(configuration.GetSection("Messaging"))
             .Validate(o => o.MaxDeliveryAttempts is >= 1 and <= 10

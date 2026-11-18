@@ -26,6 +26,17 @@ public sealed class ProposalPolicyTests
         "Zona Norte", "Vivienda", level, "Daños en muros", ["foto://1", "documento://1"], EvaluationStatus.Validated, budget);
 
     [Fact]
+    public void LatestAssetRevisionControlsEligibilityWithoutFallingBackToAnOlderValidation()
+    {
+        var older = Evaluation() with { AssetId = "bridge-1", Revision = 1 };
+        var latest = Evaluation() with { AssetId = "bridge-1", Revision = 2, Status = EvaluationStatus.Draft };
+        Assert.Empty(_policy.Generate(1, [older, latest]));
+        Assert.Empty(_policy.Generate(1, [older, latest with { Status = EvaluationStatus.Rejected }]));
+        var proposal = Assert.Single(_policy.Generate(1, [older, latest with { Status = EvaluationStatus.Validated }]));
+        Assert.Equal(2, Assert.Single(proposal.GetEvaluations()).Revision);
+    }
+
+    [Fact]
     public void GroupsDifferentSeveritiesByZoneAndAssetAndUsesTheirAverage()
     {
         var result = _policy.Generate(1, [Evaluation(DamageLevel.Minor), Evaluation(DamageLevel.Destroyed),

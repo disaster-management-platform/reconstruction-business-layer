@@ -7,6 +7,9 @@ using Reconstruction.Application;
 using Reconstruction.Domain;
 using Reconstruction.Infrastructure.ExternalAdapters;
 using Xunit;
+using Microsoft.Extensions.DependencyInjection;
+using Reconstruction.Infrastructure;
+using Reconstruction.Application.Ports;
 
 namespace Reconstruction.Tests;
 
@@ -16,6 +19,22 @@ public sealed class ExternalModuleTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(body) });
+    }
+    [Fact]
+    public void RealAssessmentsCanUseDevelopmentFundingWithoutReplacingTheReader()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>
+        {
+            ["Reconstruction:DemoExternalData"] = "true",
+            ["ExternalApis:DamageAssessments:BaseUrl"] = "https://assessments.test/"
+        }).Build();
+        using var services = new ServiceCollection().AddReconstruction(configuration,
+            new HostingEnvironment { EnvironmentName = Environments.Development }).BuildServiceProvider();
+        using var scope = services.CreateScope();
+        Assert.IsType<DamageAssessmentHttpReader>(scope.ServiceProvider.GetRequiredService<IDamageAssessmentReader>());
+        Assert.IsType<DemoFundingReader>(scope.ServiceProvider.GetRequiredService<IFundingReader>());
+        Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddReconstruction(configuration,
+            new HostingEnvironment { EnvironmentName = Environments.Production }));
     }
     [Fact]
     public async Task FundingUsesOnlyAFreshExclusiveAllocationForTheRequestedDisaster()
