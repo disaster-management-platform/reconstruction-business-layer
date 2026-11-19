@@ -33,6 +33,7 @@ public sealed class HttpSecurityTests : IDisposable
         {
             builder.UseEnvironment(environment);
             builder.UseSetting("Reconstruction:DemoExternalData", "true");
+            builder.UseSetting("Attachments:LocalDevelopment", "true");
             builder.UseSetting("ConnectionStrings:Disasters", _database.ConnectionString);
             builder.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -125,7 +126,9 @@ public sealed class HttpSecurityTests : IDisposable
         var visible = await client.GetFromJsonAsync<System.Text.Json.JsonElement>("/api/reconstruccion/proyectos");
         Assert.Equal(1, visible.GetArrayLength());
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/reconstruccion/proyectos/{hidden}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/reconstruccion/proyectos/{hidden}/adjuntos/{Guid.NewGuid()}")).StatusCode);
         Authenticate(client, "reconstruction.write", localDemoClaim: localDemoClaim);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.PostAsJsonAsync($"/api/reconstruccion/proyectos/{hidden}/adjuntos", new { })).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync("/api/reconstruccion/propuestas/generar", new { disasterId = 2 })).StatusCode);
     }
     public void Dispose() => _database.Dispose();

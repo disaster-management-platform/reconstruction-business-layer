@@ -61,7 +61,7 @@ def main():
                     processes.append(start('DisasterLocation', a, common, log))
                     processes.append(start('Reconstruction.Api', r, {**common, 'Reconstruction__DemoExternalData': 'false',
                         'ExternalApis__Disasters': api + '/', 'ExternalApis__DamageAssessments__BaseUrl': external,
-                        'ExternalApis__Funding__BaseUrl': external, 'Attachments__Directory': str(Path(folder) / 'attachments')}, log))
+                        'ExternalApis__Funding__BaseUrl': external, 'Attachments__LocalDevelopment': 'true', 'Attachments__Directory': str(Path(folder) / 'attachments')}, log))
                     processes.append(start('DisasterLocation.Gateway', g, {
                         'ReverseProxy__Clusters__disasters-api__Destinations__local__Address': api + '/',
                         'ReverseProxy__Clusters__reconstruction-api__Destinations__local__Address': reconstruction + '/'}, log))
@@ -135,7 +135,7 @@ def main():
                     stop(processes[1])
                     processes[1] = start('Reconstruction.Api', r, {**common, 'Reconstruction__DemoExternalData': 'false',
                         'ExternalApis__Disasters': api + '/', 'ExternalApis__DamageAssessments__BaseUrl': external,
-                        'ExternalApis__Funding__BaseUrl': external, 'Attachments__Directory': str(Path(folder) / 'attachments')}, log)
+                        'ExternalApis__Funding__BaseUrl': external, 'Attachments__LocalDevelopment': 'true', 'Attachments__Directory': str(Path(folder) / 'attachments')}, log)
                     wait_ready(reconstruction, '/api/reconstruccion/health', processes[1])
                     wait_ready(gateway, '/api/reconstruccion/health', processes[2])
                     assert call(path + '/reporte-final') == final

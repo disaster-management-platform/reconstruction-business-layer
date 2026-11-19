@@ -38,7 +38,14 @@ public static class DependencyInjection
         services.AddScoped<ProposalReconciliationService>();
         services.AddScoped<ProjectFormalizationService>();
         services.AddScoped<ProjectMonitoringService>();
-        services.AddSingleton<IAttachmentStore, FileAttachmentStore>();
+        if (environment.IsDevelopment() && configuration.GetValue<bool>("Attachments:LocalDevelopment"))
+            services.AddSingleton<IAttachmentStore, FileAttachmentStore>();
+        else
+        {
+            services.AddHttpClient("attachment-storage", client => client.Timeout = TimeSpan.FromSeconds(30))
+                .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, ConnectTimeout = TimeSpan.FromSeconds(5) });
+            services.AddSingleton<IAttachmentStore, ObjectAttachmentStore>();
+        }
         services.AddSingleton<IReportAttachmentVerifier>(p => p.GetRequiredService<IAttachmentStore>());
         services.AddScoped<ProjectClosureService>();
         services.AddScoped<FormalizationEventHandler>();

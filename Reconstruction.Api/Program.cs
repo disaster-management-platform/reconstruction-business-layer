@@ -70,9 +70,10 @@ routes.AddEndpointFilter(async (context, next) =>
 });
 
 routes.MapPost("/proyectos/{id:guid}/adjuntos", async (Guid id, HttpRequest request, IProjectRepository projects,
-    IAttachmentStore store, CancellationToken ct) =>
+    IAttachmentStore store, IDisasterAccess access, CancellationToken ct) =>
 {
-    if (await projects.FindAsync(id, ct) is null) return Results.NotFound();
+    var project = await projects.FindAsync(id, ct);
+    if (project is null || !access.CanAccess(project.DisasterId)) return Results.NotFound();
     if (!request.HasFormContentType) return Results.BadRequest(new { detail = "Utilice multipart/form-data." });
     var form = await request.ReadFormAsync(ct);
     var file = form.Files.GetFile("file");
@@ -81,9 +82,10 @@ routes.MapPost("/proyectos/{id:guid}/adjuntos", async (Guid id, HttpRequest requ
     return Results.Ok(await store.SaveAsync(id, Path.GetFileName(file.FileName), file.ContentType, form["category"].ToString(), stream, ct));
 });
 routes.MapGet("/proyectos/{id:guid}/adjuntos/{attachmentId:guid}", async (Guid id, Guid attachmentId,
-    IProjectRepository projects, IAttachmentStore store, CancellationToken ct) =>
+    IProjectRepository projects, IAttachmentStore store, IDisasterAccess access, CancellationToken ct) =>
 {
-    if (await projects.FindAsync(id, ct) is null) return Results.NotFound();
+    var project = await projects.FindAsync(id, ct);
+    if (project is null || !access.CanAccess(project.DisasterId)) return Results.NotFound();
     var file = await store.OpenAsync(id, attachmentId, ct);
     return file is null ? Results.NotFound() : Results.File(file.Content, file.Info.ContentType, file.Info.Name);
 });

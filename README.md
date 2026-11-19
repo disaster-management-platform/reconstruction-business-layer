@@ -190,3 +190,29 @@ Las pruebas cubren reglas de negocio, persistencia, concurrencia, seguridad, int
 Inbound JWT uses `Security__Authority` (HTTPS issuer), `Security__Audience=reconstruction-api` and existing subject/organization/disaster/role policies. For `ExternalApis__Disasters__OAuth`, `ExternalApis__DamageAssessments__OAuth` (and a supported Funding provider), configure `TokenEndpoint`, `ClientId`, `ClientSecret` externally. Tokens are cached and acquired before expiry; a 401 invalidates the token for the next operation without replaying mutations. The token endpoint requires HTTPS, has a three-second timeout, a 64 KiB response limit and no redirects. Provision separate least-privilege clients and audience grants. Existing bearer configuration remains for providers not migrated to OAuth; OAuth replaces it on outgoing requests when configured. Financial rules/providers are unchanged.
 
 Run `dotnet test Reconstruction.Tests --filter FullyQualifiedName~ClientCredentialsTests`. The real-issuer check runs only with `SECURITY_OAUTH_ENDPOINT`, `SECURITY_OAUTH_CLIENT`, `SECURITY_OAUTH_SECRET` and trusted CA configuration. Its isolated test client must have a five-second token lifespan. It verifies caching and renewal, not domain eligibility.
+
+### Container image
+
+Build from the repository root, using BuildKit:
+
+```sh
+docker build --secret id=nuget_credentials,src="$NUGET_CREDENTIALS_FILE" -t reconstruction-business-layer:local .
+```
+The private file contains the NuGet credential value `Username=<account>;Password=<token>` for GitHubPackages. Use a read-only package token, permissions 0600; never pass it as an ARG, copy it into a layer, or use a runtime secret for restore.
+
+The runtime runs as the image's non-root application UID, listens on 8080, and receives configuration and trust roots externally. `SDK_IMAGE` and `RUNTIME_IMAGE` can be set to approved image digests for repeatable releases. Version tags are pinned; use approved digests for immutable releases. Configure HTTPS at the trusted ingress and preserve HTTPS issuer/downstream validation; private CA roots must be installed through the deployment trust configuration, never bypassed. Publish ports only as required. No build or normal startup applies database migrations. Supply runtime credentials using the deployment secret store.
+
+### Shared attachments (09A)
+
+Production uses private Supabase Storage, through the existing `IAttachmentStore` port; no local fallback. Replicas share a dedicated bucket `reconstruction-attachments`. Create it **private**, with a maximum object size of at least 20 MiB + 8,196 bytes, allowing `application/octet-stream`. The objects contain a four-byte big-endian metadata length, JSON attachment metadata and the original bytes. A single immutable object preserves metadata and content together. No presigned or public URL is returned; the API validates project access and the original SHA-256 on downloads and report verification.
+
+Configure externally:
+
+- `Attachments__Storage__BaseUrl`: HTTPS Supabase project origin.
+- `Attachments__Storage__Bucket`: `reconstruction-attachments`.
+- `Attachments__Storage__PublishableKey`: publishable key (not a service-role secret).
+- `Attachments__Storage__Email` / `Attachments__Storage__Password`: separate technical Auth identity shared by reconstruction replicas, not a business user's identity.
+
+Review existing Storage policies for unintended broader grants. Apply `server/storage.sql` only after explicitly authorizing the new bucket and identity, with `psql -v storage_identity=<verified UUID> -f server/storage.sql`. No changes to the remote project are performed by the service. The runtime identity must have insert/select on this bucket only; it must not have update, delete or administrative access. Token acquisition is bounded and cached; unavailable storage fails attachment operations without writing to local disk. Standard uploads are capped at 20 MiB; connection/body deadlines and four concurrent operations per replica limit resource consumption. Validate large uploads against the selected Storage tier and network.
+
+For isolated development only, `Attachments__LocalDevelopment=true` enables the existing file provider; it is never a production fallback. Before switching an existing deployment, stop attachment writers, back up the existing directory and run `python3 scripts/migrate_attachments.py <legacy_directory>` to check the complete set. Set the external Storage credentials, then pass `--apply` to upload and read-verify each immutable object without changing its ID. Re-running reconciles already copied data; no source file is removed. Resume writers only after all records are verified and replicas use the same private bucket. Keep the backup until operational acceptance. Storage provisioning, runtime build and cross-replica validation must be performed in an isolated environment before rollout.
