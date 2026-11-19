@@ -118,7 +118,7 @@ Iniciar los procesos con sus credenciales de ejecución:
 python3 scripts/run_local.py --demo
 ```
 
-El arranque normal no aplica migraciones. No utilices la conexión administrativa para ejecutar la API. Gestión de Desastres es el único escritor de `disasters`; Reconstrucción solo escribe en `reconstruction` y conserva su integración HTTP `IDisasterReader`/`DisasterHttpReader`. Las políticas JWT y los permisos por desastre proceden de `DisasterPlatform.Security 1.0.0`.
+El arranque normal no aplica migraciones. No utilices la conexión administrativa para ejecutar la API. Gestión de Desastres es el único escritor de `disasters`; Reconstrucción solo escribe en `reconstruction` y conserva su integración HTTP `IDisasterReader`/`DisasterHttpReader`. Las políticas JWT proceden de `DisasterPlatform.Security 1.0.0`. Para administradores de Desastres, Reconstrucción obtiene el ámbito autorizado mediante la API propietaria con el JWT del usuario (audiences `reconstruction-api` y `disasters-api`); no concede acceso global ni depende de enumerar nuevos IDs en el token. Los demás usuarios conservan sus permisos explícitos por desastre.
 
 Para habilitar la comunicación mediante RabbitMQ:
 

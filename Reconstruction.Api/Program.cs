@@ -9,6 +9,7 @@ using Reconstruction.Infrastructure;
 using Platform.DAL;
 using Platform.Security;
 using Reconstruction.Application.Ports;
+using Reconstruction.Api;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
@@ -19,6 +20,16 @@ builder.Services.AddReconstructionDataAccess(builder.Configuration.GetConnection
     ?? throw new InvalidOperationException("Configure ConnectionStrings:Disasters para PostgreSQL."));
 builder.Services.AddReconstruction(builder.Configuration, builder.Environment);
 builder.Services.AddPlatformSecurity(builder.Configuration, builder.Environment);
+if (!builder.Configuration.GetValue<bool>("Security:LocalDemo"))
+{
+    builder.Services.AddHttpClient("disaster-access", client =>
+    {
+        client.BaseAddress = new Uri(builder.Configuration["ExternalApis:Disasters"] ?? "http://localhost:5156/");
+        client.Timeout = TimeSpan.FromSeconds(4);
+        client.MaxResponseContentBufferSize = 1024 * 1024;
+    });
+    builder.Services.AddScoped<IDisasterAccess, DisasterScopeAccess>();
+}
 
 var app = builder.Build();
 app.UseExceptionHandler(errors => errors.Run(async context =>
@@ -63,6 +74,7 @@ routes.AddEndpointFilter(async (context, next) =>
     var user = context.HttpContext.User;
     if (context.HttpContext.Request.Method != "GET" && !user.IsInRole(PlatformSecurity.Write)) return Results.Forbid();
     var access = context.HttpContext.RequestServices.GetRequiredService<IDisasterAccess>();
+    if (access is DisasterScopeAccess scope) await scope.ResolveAsync(context.HttpContext.RequestAborted);
     var generate = context.Arguments.OfType<GenerateProposalsRequest>().FirstOrDefault();
     if (generate is not null && !access.CanAccess(generate.DisasterId)) return Results.Forbid();
     if (int.TryParse(context.HttpContext.Request.Query["disasterId"], out var id) && !access.CanAccess(id)) return Results.Forbid();
