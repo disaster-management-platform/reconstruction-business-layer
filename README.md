@@ -1,218 +1,363 @@
+<div align="center">
 
-# Disaster Management Platform — Reconstrucción
+# RECONECTA
 
-Implementación del módulo de Reconstrucción de la plataforma de gestión de desastres. Permite generar propuestas a partir de evaluaciones de daños, formalizar proyectos, gestionar sus presupuestos y actividades, registrar avances y consolidar los resultados de ejecución.
+### Reconstruction
 
-Desarrollado en .NET 10, sobre el backend de desastres existente, conservando la compatibilidad con el cliente Android.
+**De la emergencia a la reconstrucción**
+
+Servicio de definición, formalización, monitoreo y cierre de proyectos.
+
+![.NET](https://img.shields.io/badge/.NET_10-512BD4?style=for-the-badge)
+![Hexagonal](https://img.shields.io/badge/Architecture-Hexagonal-11847F?style=for-the-badge)
+![RabbitMQ](https://img.shields.io/badge/RabbitMQ-FF6600?style=for-the-badge)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge)
+
+**Pontificia Universidad Javeriana**
+
+Arquitectura de Software · 2026
+
+[Plataforma completa](https://github.com/disaster-management-platform/disaster-platform-infrastructure) · [Arquitectura](#arquitectura) · [Demostración](#demostración) · [Instalación](#instalación-y-ejecución)
+
+</div>
+
+---
+
+## Demostración
+
+<div align="center">
+
+[![Demostración RECONECTA](https://img.youtube.com/vi/HVCKoTRAxu8/hqdefault.jpg)](https://youtu.be/HVCKoTRAxu8)
+
+[Ver demostración funcional de RECONECTA](https://youtu.be/HVCKoTRAxu8)
+
+</div>
+
+## Descripción
+
+`reconstruction-business-layer` administra el ciclo de vida de los proyectos de reconstrucción. Implementa arquitectura hexagonal (Ports and Adapters) con Facade para coordinar casos de uso. Las políticas del dominio se mantienen independientes de HTTP, EF Core, RabbitMQ y almacenamiento de objetos. Consume el contexto de Desastres, evaluaciones vigentes de Daños y disponibilidad de financiación mediante contratos explícitos.
+
+## Contenido
+
+- [Funcionalidades](#funcionalidades)
+- [Arquitectura](#arquitectura)
+- [Decisiones arquitectónicas](#decisiones-arquitectónicas)
+- [Tecnologías y justificación](#tecnologías-y-justificación)
+- [Estructura del repositorio](#estructura-del-repositorio)
+- [Integración con otros componentes](#integración-con-otros-componentes)
+- [Persistencia](#persistencia)
+- [Contratos de comunicación](#contratos-de-comunicación)
+- [Seguridad](#seguridad)
+- [Instalación y ejecución](#instalación-y-ejecución)
+- [Pruebas](#pruebas)
+- [Alcance y validación](#alcance-y-validación)
+- [Repositorios relacionados](#repositorios-relacionados)
+- [Autores](#autores)
+
+## Funcionalidades
+
+| Funcionalidad | Descripción |
+| --- | --- |
+| Definición | Generación de propuestas según daño, zona, tipo de activo y financiación. |
+| Formalización | Selección de propuesta, responsables, contratista, cronograma y reserva de presupuesto. |
+| Monitoreo | Seguimiento de actividades, reportes, costos, evidencia y cambios justificados. |
+| Finalización | Cierre condicionado a actividades completas, reporte consolidado y liberación de saldo. |
+| Auditoría | Historial y línea de tiempo recuperable mediante eventos tipados. |
+| Adjuntos | Almacenamiento privado e inmutable con verificación SHA-256. |
 
 ## Arquitectura
 
-![Arquitectura](docs/arquitectura.png)
+### Vista lógica — arquitectura hexagonal
 
-El sistema sigue una arquitectura orientada a servicios con arquitectura hexagonal. Las reglas de negocio se mantienen independientes de los mecanismos de persistencia, comunicación e integración.
+Las flechas representan dependencias y uso de interfaces. Los adaptadores implementan los puertos, no condicionan las reglas del dominio.
 
-- **Domain:** entidades, estados, políticas y reglas de negocio.
-- **Application:** servicios de negocio, casos de uso e interfaces de comunicación.
-- **Infrastructure:** adaptadores HTTP, mensajería y almacenamiento de archivos.
-- **DAL:** `DisasterPlatform.Core 4.0.0` y `DisasterPlatform.DAL 6.0.0`, con Entity Framework Core y PostgreSQL. Los esquemas `disasters` y `reconstruction` mantienen sus propios repositorios y contextos.
-- **API Gateway:** implementado con YARP para centralizar el acceso a los módulos y servir la interfaz web.
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#ffffff","lineColor":"#64748b"},"flowchart":{"curve":"linear"}}}%%
+flowchart LR
+    G["API Gateway"] -->|REST| API["Reconstruction.Api"]
+    subgraph APP["Application"]
+      F["IReconstructionFacade / Facade"] --> DE["ProposalDefinitionService"]
+      F --> FO["ProjectFormalizationService"]
+      F --> MO["ProjectMonitoringService"]
+      F --> CL["ProjectClosureService"]
+      DE & FO & MO & CL --> D["Domain / ProposalPolicy"]
+      DE & FO & MO & CL --> P["Outbound Ports"]
+    end
+    API --> F
+    P -.->|implementación| H["HTTP adapters"]
+    P -.->|implementación| DAL["DAL / Unit of Work"]
+    P -.->|implementación| S["IAttachmentStore adapter"]
+    DAL --> DB[(PostgreSQL reconstruction)]
+    H --> DS["Desastres / Daños / Financiación"]
+    S --> ST[(Supabase Storage)]
+    DAL --> O["OutboxDispatcher"]
+    O -->|AMQP| Q["RabbitMQ"]
+    Q --> C["Consumers / Inbox"]
+    C --> DAL
+    class G,API access;
+    class F,DE,FO,MO,CL,D,O,C logic;
+    class P contract;
+    class DAL,DB,ST persistence;
+    class Q,H,S,DS integration;
+    classDef access fill:#DBEAFE,stroke:#7B9ABD,color:#19363F;
+    classDef logic fill:#DCFCE7,stroke:#86B49A,color:#19363F;
+    classDef contract fill:#FEF3C7,stroke:#CBB16F,color:#19363F;
+    classDef persistence fill:#EDE9FE,stroke:#AA98CD,color:#19363F;
+    classDef integration fill:#FFEDD5,stroke:#CEA778,color:#19363F;
+    classDef identity fill:#FCE7F3,stroke:#C99AB6,color:#19363F;
+```
 
-Las nuevas propuestas y proyectos requieren que el desastre esté en Recovery o Reconstruction. Closed permite consultar y finalizar proyectos históricos, sin generar proyectos nuevos ni reclasificar automáticamente el desastre. Las fases se consultan mediante HTTP al servicio propietario.
 
-El patrón Facade proporciona un punto de acceso a los servicios de Reconstrucción. La colaboración asíncrona se realiza mediante RabbitMQ, utilizando eventos tipados y colas independientes por consumidor.
+### Responsabilidades de los componentes
 
-Se emplean los patrones Transactional Outbox e Inbox para preservar la consistencia entre la persistencia y la publicación de eventos, controlar duplicados y permitir la recuperación ante fallos de comunicación.
+| Componente | Responsabilidad |
+| --- | --- |
+| Reconstruction.Api | Endpoints, composición DI y adaptación de permisos. |
+| Reconstruction.Domain | Políticas de propuestas; entidades e invariantes compartidas vía Core. |
+| Reconstruction.Application | Casos de uso, Facade, puertos y coordinación de eventos. |
+| Reconstruction.Infrastructure | Adaptadores HTTP, resiliencia, objetos y RabbitMQ. |
+| DisasterPlatform.DAL | Repositorios, unidad de trabajo, auditoría, Inbox y Outbox. |
+| WorkflowProjectionRecovery | Recuperación y reconciliación de proyecciones de seguimiento. |
 
-### Servicios de negocio
+### Flujo de negocio
 
-| Servicio | Responsabilidad |
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#ffffff","lineColor":"#64748b"},"flowchart":{"curve":"linear"}}}%%
+flowchart LR
+    DA["Daños vigentes validados"] --> DE["Definición de propuestas"]
+    FU["Financiación disponible"] --> DE
+    DE --> FO["Formalización / reserva"]
+    FO --> MO["Monitoreo / reportes"]
+    MO --> CL["Finalización / liberación de saldo"]
+    FO --> AU[(Auditoría)]
+    MO --> AU
+    CL --> AU
+    class DA,FU integration;
+    class DE,FO,MO,CL logic;
+    class AU persistence;
+    classDef access fill:#DBEAFE,stroke:#7B9ABD,color:#19363F;
+    classDef logic fill:#DCFCE7,stroke:#86B49A,color:#19363F;
+    classDef contract fill:#FEF3C7,stroke:#CBB16F,color:#19363F;
+    classDef persistence fill:#EDE9FE,stroke:#AA98CD,color:#19363F;
+    classDef integration fill:#FFEDD5,stroke:#CEA778,color:#19363F;
+    classDef identity fill:#FCE7F3,stroke:#C99AB6,color:#19363F;
+```
+La generación de propuestas y proyectos exige Recovery o Reconstruction. Closed permite consultar y terminar proyectos históricos, pero no crear otros. Las propuestas agrupan evaluaciones actuales validadas con daño distinto de None por zona y activo. La gravedad media guía la asignación de recursos; la reserva transaccional evita comprometer más presupuesto que el disponible. El cierre verifica las actividades y conserva el historial ejecutado.
+
+### Procesamiento asíncrono y recuperación
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#ffffff","lineColor":"#64748b"},"flowchart":{"curve":"linear"}}}%%
+sequenceDiagram
+    actor U as Operador
+    participant A as API / Facade
+    participant D as DAL / UoW
+    participant O as OutboxDispatcher
+    participant Q as RabbitMQ
+    participant C as Consumer / Inbox
+    U->>A: Comando con expectedVersion
+    A->>D: Cambiar estado + auditoría + evento Outbox
+    D-->>A: Commit local
+    A-->>U: Resultado
+    O->>D: Obtener evento pendiente
+    O->>Q: Publicar evento tipado
+    Q->>C: Entregar evento
+    C->>D: Inbox + efecto y proyección
+    D-->>C: Commit
+    C-->>Q: ACK
+    Note over Q,C: Una entrega repetida se deduplica por identidad persistente
+```
+El proceso ASP.NET Core aloja API y workers registrados. RabbitMQ y PostgreSQL se despliegan aparte. Los eventos y la línea de tiempo no sustituyen el estado relacional vigente: no se implementa Event Sourcing como modelo de persistencia del dominio.
+
+## Decisiones arquitectónicas
+
+| Atributo de calidad | Decisión | Mecanismo y compromiso |
+| --- | --- | --- |
+| Modificabilidad | Hexagonal + Facade | Aísla políticas y adaptadores; introduce interfaces y composición explícitas. |
+| Interoperabilidad | Puertos y contratos REST | Permite sustituir proveedores sin compartir sus esquemas. |
+| Integridad | Unidad de trabajo y control de versión | Reserva y auditoría atómicas; conflictos explícitos. |
+| Resiliencia | Outbox / Inbox | Tolera pérdida de respuesta y entregas duplicadas; consistencia eventual de proyecciones. |
+| Disponibilidad | Resiliencia HTTP y Storage compartido | Circuit breaker para Desastres y datos fuera del contenedor; dependencias siguen siendo necesarias. |
+| Escalabilidad | Workers y consumidores | Escalamiento selectivo; requiere capacidad PostgreSQL y broker. |
+
+## Tecnologías y justificación
+
+| Tecnología | Justificación para la integración |
+| --- | --- |
+| .NET 10 / ASP.NET Core | Expone el dominio mediante contratos compatibles con Gateway, Razor y Jakarta EE. |
+| EF Core / Npgsql / NuGet | Reutiliza las abstracciones y persistencia compartidas conservando propiedad de reconstruction. |
+| RabbitMQ / AMQP | Intercambia eventos tipados y permite consumidores separados del comando interactivo. |
+| PostgreSQL | Mantiene consistencia de reservas, proyectos, auditoría y recibos en transacciones locales. |
+| Supabase Storage | Permite a réplicas acceder a documentos privados sin afinidad de disco local. |
+| HttpClient / REST | Conecta proveedores de contexto, daños y financiación sin contaminar Domain. |
+| Docker | Distribuye API y workers como unidad ejecutable del despliegue integrado. |
+
+## Estructura del repositorio
+
+```text
+reconstruction-business-layer/
+├── Reconstruction.Api/
+├── Reconstruction.Domain/
+├── Reconstruction.Application/
+│   ├── Contracts/
+│   ├── Facade/
+│   ├── Ports/
+│   ├── Services/
+│   └── Messaging/
+├── Reconstruction.Infrastructure/
+│   ├── ExternalAdapters/
+│   └── Messaging/
+├── Reconstruction.Tests/
+├── docs/
+├── scripts/
+├── server/storage.sql
+├── DisasterLocation.sln
+├── docker-compose.yml
+└── Dockerfile
+```
+
+## Integración con otros componentes
+
+| Dependencia | Contrato y responsabilidad |
 |---|---|
-| Definición | Clasificación de daños, generación de propuestas y distribución presupuestal según la gravedad promedio. |
-| Formalización | Creación de proyectos, asignación de responsables, reserva presupuestal y definición del cronograma. |
-| Monitoreo | Seguimiento de actividades, registro de costos, evidencias y revisiones presupuestales. |
-| Finalización | Validación de actividades terminadas, consolidación de reportes y liberación del presupuesto no ejecutado. |
+| Desastres | REST, fase y ámbito del recurso mediante `IDisasterReader`. |
+| Evaluación de Daños | Snapshot de evaluaciones vigentes con revisión y presupuesto. |
+| Financiación | Adaptador de disponibilidad de fondos; datos simulados en modo demo. |
+| RabbitMQ | Eventos tipados y consumidores de Formalización, Monitoreo y Finalización. |
+| Supabase Storage | `IAttachmentStore` implementado por `ObjectAttachmentStore`; descarga a través de la API. |
+| Gateway / Portal | Operaciones interactivas mediante REST. |
 
-Los cambios de estado y presupuesto se registran mediante mecanismos de auditoría y control de concurrencia.
+No se utiliza el inventario de Eden como presupuesto financiero. El proveedor real de financiación no debe confundirse con el modo de demostración. Consultar [contratos de integración](docs/integracion.md) y [arquitectura](docs/arquitectura.md).
 
+## Persistencia
 
-## Lógica de negocio
+El servicio escribe exclusivamente el esquema `reconstruction`. La API referencia Core 4.0.0, DAL 6.0.0 y Security 1.0.0 en el commit consultado; las últimas versiones del repositorio compartido no son automáticamente las consumidas aquí. Las entidades y reservas se persisten mediante EF Core; la unidad de trabajo conserva auditoría y eventos Outbox. Inbox deduplica efectos de consumo. Los adjuntos se almacenan en el bucket privado `reconstruction-attachments`: un objeto inmutable conserva metadatos y bytes; máximo estándar 20 MiB más envelope. La API verifica acceso y SHA-256; no retorna URLs públicas ni prefirmadas. La implementación local de archivos es únicamente una opción de desarrollo, no fallback productivo.
 
-El proceso de reconstrucción se divide en cuatro etapas, cada una implementada mediante un servicio de negocio con responsabilidades independientes.
+## Contratos de comunicación
 
-### 1. Definición de propuestas
+| Método | Ruta | Responsabilidad |
+| --- | --- | --- |
+| GET | `/api/reconstruccion/health` y `/ready` bajo el mismo prefijo | Diagnóstico. |
+| GET | `/api/reconstruccion/access-mode` | Modo de acceso. |
+| GET | `/api/reconstruccion/financiacion` | Consultar fondos. |
+| GET | `/api/reconstruccion/workflow` | Flujo. |
+| POST | `/api/reconstruccion/propuestas/generar` | Generar propuestas. |
+| GET | `/api/reconstruccion/propuestas` | Consultar propuestas. |
+| GET / POST | `/api/reconstruccion/proyectos` | Consultar / crear. |
+| GET | `/api/reconstruccion/proyectos/{id}` | Detalle. |
+| PUT | `/api/reconstruccion/proyectos/{id}/formalizacion` | Formalizar. |
+| POST | `/api/reconstruccion/proyectos/{id}/confirmar-formalizacion` | Confirmar. |
+| PUT | `/api/reconstruccion/proyectos/{id}/presupuesto` | Revisión presupuestal. |
+| POST | `/api/reconstruccion/proyectos/{id}/contrato-firmado` | Registrar contrato. |
+| GET | `/api/reconstruccion/proyectos/{id}/monitoreo` | Monitorear. |
+| POST | `/api/reconstruccion/proyectos/{id}/actividades/{activityId}/reportes` | Registrar avance. |
+| POST | `/api/reconstruccion/proyectos/{id}/cerrar` | Cierre. |
+| GET | `/api/reconstruccion/proyectos/{id}/auditoria` | Auditoría. |
+| GET | `/api/reconstruccion/proyectos/{id}/linea-tiempo` | Seguimiento. |
+| GET | `/api/reconstruccion/proyectos/{id}/reporte-final` | Reporte final. |
+| POST | `/api/reconstruccion/proyectos/{id}/adjuntos` | Subir archivo. |
+| GET | `/api/reconstruccion/proyectos/{id}/adjuntos/{attachmentId}` | Descargar. |
+Las operaciones versionadas usan `expectedVersion`; los reportes conservan identidad para evitar duplicar costos. El contrato financiero real depende del proveedor autorizado y no se inventan transferencias.
 
-Se consultan las evaluaciones de daños validadas y se agrupan por zona geográfica y tipo de activo. A cada nivel de daño se le asigna un peso que permite calcular la gravedad promedio de cada grupo y distribuir proporcionalmente el presupuesto disponible de donaciones.
+## Seguridad
 
-Las propuestas se actualizan cuando cambian las evaluaciones. El usuario selecciona cuáles se convertirán en proyectos de reconstrucción.
+JWT con audiencia `reconstruction-api`, roles `reconstruction.read/write` y ámbito de desastre. Para administradores de Desastres se consulta el ámbito autorizado al servicio propietario mediante JWT del usuario con las audiencias necesarias; no se concede acceso global. Los adaptadores de servicio usan Client Credentials de alcance mínimo, cachean tokens y no repiten mutaciones automáticamente ante 401. Storage utiliza identidad técnica separada y acceso privado; nunca se usa una clave administradora como credencial de ejecución.
 
-### 2. Formalización
+## Instalación y ejecución
 
-Para cada propuesta seleccionada se define un proyecto con presupuesto, fuente de financiación, responsable, contratista y cronograma de actividades.
+Para ejecutar la plataforma completa, consultar [Infrastructure](https://github.com/disaster-management-platform/disaster-platform-infrastructure).
 
-El presupuesto se reserva de manera transaccional, evitando comprometer recursos superiores a los disponibles. Una vez confirmada la formalización, el proyecto pasa a monitoreo.
+```bash
+git clone https://github.com/disaster-management-platform/reconstruction-business-layer.git
+cd reconstruction-business-layer
+```
+```bash
+dotnet restore
+dotnet build --no-restore
+docker build --secret id=nuget_credentials,src="$NUGET_CREDENTIALS_FILE" -t reconstruction-business-layer:local .
+```
 
-### 3. Monitoreo
+Requiere .NET SDK 10 y acceso de lectura a GitHub Packages. El archivo protegido de BuildKit contiene `Username=<account>;Password=<token>` para GitHubPackages. No incorporar el token en la imagen. El contenedor escucha en 8080 y se ejecuta sin privilegios de root. Configurar credenciales y CA de confianza externamente.
 
-Se realiza el seguimiento de las actividades mediante reportes que registran su estado, costos ejecutados, evidencias y documentación de soporte.
+Configurar `ConnectionStrings__Disasters` con la conexión propia de Reconstrucción (nombre histórico de la variable), `Security__Authority`, `Security__Audience`, `ExternalApis__Disasters`, configuración de Daños/financiación y `ExternalApis__Disasters__OAuth__TokenEndpoint`, `ClientId`, `ClientSecret` bajo el mismo prefijo; equivalentes para DamageAssessments. Habilitar mensajería con `Messaging__Enabled=true` y sus parámetros del broker. Configurar `Attachments__Storage__BaseUrl`, `Bucket`, `PublishableKey`, `Email`, `Password` bajo el mismo prefijo. Las migraciones se aplican de forma explícita con el inicializador compartido y credenciales administrativas separadas; no al arrancar.
 
-El servicio controla el presupuesto de cada actividad y permite realizar revisiones presupuestales justificadas sin perder el historial de ejecución.
-
-### 4. Finalización y cierre
-
-Un proyecto puede cerrarse cuando todas sus actividades se encuentran terminadas y cuentan con sus respectivos reportes y evidencias.
-
-Se genera un reporte consolidado de la ejecución y se libera el presupuesto no utilizado, conservando el historial del proyecto y los costos ejecutados.
-
-### Reglas transversales
-
-- Control de las transiciones de estado de propuestas, proyectos y actividades.
-- Auditoría de operaciones y modificaciones presupuestales.
-- Control de concurrencia para evitar actualizaciones inconsistentes.
-- Idempotencia en el registro de reportes para evitar duplicidad de costos.
-- Comunicación asíncrona entre servicios mediante eventos de negocio publicados en RabbitMQ.
-
-## Tecnologías
-
-| Componente | Tecnología |
-|---|---|
-| Backend | .NET 10 / ASP.NET Core |
-| Persistencia | Entity Framework Core / PostgreSQL |
-| API Gateway | YARP |
-| MOM | RabbitMQ / AMQP |
-| Integración | REST / JSON |
-| Seguridad | JWT / OpenID Connect |
-| Frontend | HTML, CSS, JavaScript y Leaflet |
-| Pruebas | xUnit y Python |
-
-## Ejecución
-
-Se requiere .NET 10 y autenticación NuGet para GitHub Packages. Configura la conexión desde un archivo local protegido fuera de Git. El archivo de Reconstrucción debe contener una cadena Npgsql con su usuario propio, `SSL Mode=VerifyFull` y la CA confiable para conexiones TCP:
+### Desarrollo aislado (datos simulados)
 
 ```bash
 export RECONSTRUCTION_CONNECTION_STRING="$(cat "$RECONSTRUCTION_CONNECTION_FILE")"
 export ExternalApis__Disasters=http://localhost:5156/
-```
-
-`run_local.py` inicia únicamente Reconstrucción y el Gateway; transmite `ConnectionStrings__Disasters` solo a Reconstrucción. Gestión de Desastres se inicia desde `disaster-backend-offline` y se consulta por `ExternalApis__Disasters`. El Gateway no recibe credenciales PostgreSQL. Su configuración base ofrece ambos módulos y un único frontend, sin el perfil funcional `Reconstruction`.
-
-Compilar la solución y el Gateway:
-
-```bash
-dotnet restore DisasterLocation.sln
 dotnet build DisasterLocation.sln
 dotnet build ../disaster-api-gateway/DisasterLocation.Gateway.sln
-```
-
-Interfaz web: http://localhost:5080
-
-Las migraciones se aplican explícitamente antes de ejecutar los servicios, con un archivo administrativo separado en `MIGRATION_CONNECTION_FILE`:
-
-```bash
-ConnectionStrings__Disasters="$(cat "$MIGRATION_CONNECTION_FILE")" \
-  dotnet run --project ../disaster-backend-offline/DisasterLocation --no-launch-profile -- --Database:Migrate=true
-```
-
-Iniciar los procesos con sus credenciales de ejecución:
-
-```bash
-python3 scripts/run_local.py --demo
-```
-
-El arranque normal no aplica migraciones. No utilices la conexión administrativa para ejecutar la API. Gestión de Desastres es el único escritor de `disasters`; Reconstrucción solo escribe en `reconstruction` y conserva su integración HTTP `IDisasterReader`/`DisasterHttpReader`. Las políticas JWT proceden de `DisasterPlatform.Security 1.0.0`. Para administradores de Desastres, Reconstrucción obtiene el ámbito autorizado mediante la API propietaria con el JWT del usuario (audiences `reconstruction-api` y `disasters-api`); no concede acceso global ni depende de enumerar nuevos IDs en el token. Los demás usuarios conservan sus permisos explícitos por desastre.
-
-Para habilitar la comunicación mediante RabbitMQ:
-
-```bash
 docker compose up -d rabbitmq
 python3 scripts/run_local.py --demo --messaging
 ```
 
-El modo de demostración utiliza una identidad local y datos simulados de evaluación de daños y donaciones. Fuera de este modo, se requiere configurar los servicios externos y el proveedor de identidad.
-
-Endpoints de diagnóstico:
-
-- `/api/reconstruccion/health`
-- `/api/reconstruccion/ready`
-
-## Integración
-
-La comunicación con Desastres, Evaluación de Daños y Donaciones se realiza mediante adaptadores REST. Los contratos externos se mantienen separados del dominio, evitando dependencias directas entre los modelos de negocio de cada módulo.
-
-Los adaptadores de Evaluación de Daños y Donaciones se validan actualmente mediante servicios HTTP de prueba, mientras se completa la integración con los módulos correspondientes.
-
-El backend conserva la compatibilidad con el cliente Android, incluyendo el registro y la sincronización de desastres en modo desconectado.
-
-La dirección del servidor móvil puede configurarse mediante:
-
-```bash
--PAPI_BASE_URL=http://IP_DEL_SERVIDOR:5080/api/
-```
-
-Ver [contratos de integración](docs/integracion.md) y [documentación de arquitectura](docs/arquitectura.md).
-
-## Seguridad
-
-Los servicios de Reconstrucción utilizan autenticación JWT y autorización mediante roles y acceso por desastre. El proveedor de identidad se configura mediante las variables:
-
-- `Security__Authority`
-- `Security__Audience`
-
-Las evidencias y documentos se almacenan fuera del directorio público, asociados a su proyecto y con verificación de integridad mediante SHA-256.
+El modo demo no representa una integración real con la financiación. Desastres debe estar iniciado aparte. Para la ejecución integrada utilizar Infrastructure. Comprobar `/api/reconstruccion/health` y `/api/reconstruccion/ready`.
 
 ## Pruebas
 
-Se requieren `psycopg2` y un PostgreSQL local por socket Unix con permiso para crear bases. Con `PGSOCKET` apuntando a ese directorio:
+```bash
+export TEST_POSTGRES_DSN="host=${PGSOCKET:?Configura socket PostgreSQL local} port=5432 dbname=postgres user=$(id -un)"
+export TEST_POSTGRES_CONNECTION="Host=$PGSOCKET;Port=5432;Database=postgres;Username=$(id -un)"
+dotnet test
+```
+
+Se requiere PostgreSQL aislado por socket Unix, permisos para bases temporales y `psycopg2` para los scripts Python. Nunca utilizar el proyecto Supabase de entrega.
 
 ```bash
-export TEST_POSTGRES_DSN="host=${PGSOCKET:?Configura el socket PostgreSQL local} port=5432 dbname=postgres user=$(id -un)"
-export TEST_POSTGRES_CONNECTION="Host=$PGSOCKET;Port=5432;Database=postgres;Username=$(id -un)"
-dotnet test DisasterLocation.sln
 python3 scripts/platform_e2e.py
 python3 scripts/messaging_e2e.py
-python3 scripts/smoke_test.py
 python3 scripts/monitoring_e2e.py
 python3 scripts/finalization_e2e.py
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
-Las pruebas cubren reglas de negocio, persistencia, concurrencia, seguridad, integración HTTP y comunicación asíncrona. Los scripts crean bases PostgreSQL y puertos temporales, aplican las migraciones antes del arranque y eliminan únicamente sus recursos. Las pruebas destructivas rechazan conexiones remotas. La suite completa del Gateway se ejecuta con `python3 ../disaster-api-gateway/scripts/test_gateway.py`. Las cuatro pruebas de `test_consolidate_databases.py` verifican actualmente inicialización e integridad PostgreSQL; la herramienta histórica de transferencia SQLite fue retirada. `messaging_e2e.py` requiere el broker disponible y crea un virtual host de prueba propio.
+La suite de mensajería requiere RabbitMQ local y crea un vhost propio. Las pruebas cubren definición, reserva, formalización, avances, cierre, permisos, fallas HTTP, idempotencia y persistencia. `dotnet test Reconstruction.Tests --filter FullyQualifiedName~ClientCredentialsTests` verifica credenciales técnicas. Utilizar datos sintéticos y Storage aislado para pruebas de archivos.
 
-## Trabajo futuro
+## Alcance y validación
 
-- Integración con los módulos de Evaluación de Daños, Donaciones e Identidad.
-- Ampliación funcional de Gestión de Desastres según el enunciado, conservando el propietario único.
-- Almacenamiento compartido de evidencias y documentos.
-- Redundancia de componentes y validación de los escenarios de alta disponibilidad.
-- Pruebas de carga para los escenarios de escalabilidad establecidos en los requisitos del sistema.
+La arquitectura habilita integración con Daños y financiación, pero el modo demo puede utilizar datos externos simulados. No se certifica transferencia de dinero ni failover de infraestructura. No se ejecutaron nuevamente las pruebas.
 
-## Keycloak service credentials
+Referencia del código consultado: [`9675660`](https://github.com/disaster-management-platform/reconstruction-business-layer/tree/96756603e66358e762257deb8b522c859d9be6ec). Los resultados cuantitativos de los atributos de calidad requieren experimentos sobre el despliegue integrado.
 
-Inbound JWT uses `Security__Authority` (HTTPS issuer), `Security__Audience=reconstruction-api` and existing subject/organization/disaster/role policies. For `ExternalApis__Disasters__OAuth`, `ExternalApis__DamageAssessments__OAuth` (and a supported Funding provider), configure `TokenEndpoint`, `ClientId`, `ClientSecret` externally. Tokens are cached and acquired before expiry; a 401 invalidates the token for the next operation without replaying mutations. The token endpoint requires HTTPS, has a three-second timeout, a 64 KiB response limit and no redirects. Provision separate least-privilege clients and audience grants. Existing bearer configuration remains for providers not migrated to OAuth; OAuth replaces it on outgoing requests when configured. Financial rules/providers are unchanged.
+## Repositorios relacionados
 
-Run `dotnet test Reconstruction.Tests --filter FullyQualifiedName~ClientCredentialsTests`. The real-issuer check runs only with `SECURITY_OAUTH_ENDPOINT`, `SECURITY_OAUTH_CLIENT`, `SECURITY_OAUTH_SECRET` and trusted CA configuration. Its isolated test client must have a five-second token lifespan. It verifies caching and renewal, not domain eligibility.
+| Repositorio | Responsabilidad |
+| --- | --- |
+| [Infrastructure](https://github.com/disaster-management-platform/disaster-platform-infrastructure) | Despliegue integral |
+| [Presentation](https://github.com/disaster-management-platform/disaster-platform-presentation) | Portal Razor MVC |
+| [Mobile Client](https://github.com/disaster-management-platform/disaster-mobile-client) | Android Offline First |
+| [API Gateway](https://github.com/disaster-management-platform/disaster-api-gateway) | Enrutamiento YARP |
+| [Disaster Management](https://github.com/disaster-management-platform/disaster-backend-offline) | Gestión de desastres |
+| [Damage Assessment](https://github.com/disaster-management-platform/disaster-damage-assessmet-service) | Evaluación de daños |
+| [Integration Service](https://github.com/disaster-management-platform/disaster-integration-service) | Interoperabilidad y ACL |
+| [Sahana Eden](https://github.com/disaster-management-platform/sahana-eden) | Gestión humanitaria nativa |
+| [Platform DAL](https://github.com/disaster-management-platform/disaster-platform-dal) | Bibliotecas de persistencia y contratos |
 
-### Container image
+## Autores
 
-Build from the repository root, using BuildKit:
+<div align="center">
 
-```sh
-docker build --secret id=nuget_credentials,src="$NUGET_CREDENTIALS_FILE" -t reconstruction-business-layer:local .
-```
-The private file contains the NuGet credential value `Username=<account>;Password=<token>` for GitHubPackages. Use a read-only package token, permissions 0600; never pass it as an ARG, copy it into a layer, or use a runtime secret for restore.
+**Pontificia Universidad Javeriana**
 
-The runtime runs as the image's non-root application UID, listens on 8080, and receives configuration and trust roots externally. `SDK_IMAGE` and `RUNTIME_IMAGE` can be set to approved image digests for repeatable releases. Version tags are pinned; use approved digests for immutable releases. Configure HTTPS at the trusted ingress and preserve HTTPS issuer/downstream validation; private CA roots must be installed through the deployment trust configuration, never bypassed. Publish ports only as required. No build or normal startup applies database migrations. Supply runtime credentials using the deployment secret store.
+Facultad de Ingeniería — Departamento de Ingeniería de Sistemas
 
-### Shared attachments (09A)
+Arquitectura de Software · 2026-30
 
-Production uses private Supabase Storage, through the existing `IAttachmentStore` port; no local fallback. Replicas share a dedicated bucket `reconstruction-attachments`. Create it **private**, with a maximum object size of at least 20 MiB + 8,196 bytes, allowing `application/octet-stream`. The objects contain a four-byte big-endian metadata length, JSON attachment metadata and the original bytes. A single immutable object preserves metadata and content together. No presigned or public URL is returned; the API validates project access and the original SHA-256 on downloads and report verification.
+| Integrantes |
+|:---:|
+| Juan Felipe Rodríguez |
+| Viviana Gómez León |
+| Valeria Catalina Caycedo Ramírez |
+| Sofía Guerra Jiménez |
 
-Configure externally:
+**Docente:** César Julio Bustacara Medina
 
-- `Attachments__Storage__BaseUrl`: HTTPS Supabase project origin.
-- `Attachments__Storage__Bucket`: `reconstruction-attachments`.
-- `Attachments__Storage__PublishableKey`: publishable key (not a service-role secret).
-- `Attachments__Storage__Email` / `Attachments__Storage__Password`: separate technical Auth identity shared by reconstruction replicas, not a business user's identity.
+---
 
-Review existing Storage policies for unintended broader grants. Apply `server/storage.sql` only after explicitly authorizing the new bucket and identity, with `psql -v storage_identity=<verified UUID> -f server/storage.sql`. No changes to the remote project are performed by the service. The runtime identity must have insert/select on this bucket only; it must not have update, delete or administrative access. Token acquisition is bounded and cached; unavailable storage fails attachment operations without writing to local disk. Standard uploads are capped at 20 MiB; connection/body deadlines and four concurrent operations per replica limit resource consumption. Validate large uploads against the selected Storage tier and network.
+### RECONECTA
 
-For isolated development only, `Attachments__LocalDevelopment=true` enables the existing file provider; it is never a production fallback. Before switching an existing deployment, stop attachment writers, back up the existing directory and run `python3 scripts/migrate_attachments.py <legacy_directory>` to check the complete set. Set the external Storage credentials, then pass `--apply` to upload and read-verify each immutable object without changing its ID. Re-running reconciles already copied data; no source file is removed. Resume writers only after all records are verified and replicas use the same private bucket. Keep the backup until operational acceptance. Storage provisioning, runtime build and cross-replica validation must be performed in an isolated environment before rollout.
+*De la emergencia a la reconstrucción.*
+
+</div>
