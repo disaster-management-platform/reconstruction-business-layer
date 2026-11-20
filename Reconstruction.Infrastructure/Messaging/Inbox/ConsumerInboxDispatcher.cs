@@ -5,12 +5,18 @@ using Reconstruction.Application.Ports;
 namespace Reconstruction.Infrastructure.Messaging.Inbox;
 
 // Adaptador de entrada: selecciona el caso de uso; las reglas quedan en Application.
-public sealed class ConsumerInboxDispatcher(IServiceProvider services)
+public sealed class ConsumerInboxDispatcher(IServiceProvider services, MessageDisasterScope? message = null)
 {
-    public Task DispatchAsync(string consumerName, EventEnvelope envelope, CancellationToken ct) =>
-        Resolve(consumerName).HandleAsync(envelope, ct);
-    public Task RebuildAsync(string consumerName, EventEnvelope envelope, CancellationToken ct) =>
-        Resolve(consumerName).RebuildProjectionAsync(envelope, ct);
+    public Task DispatchAsync(string consumerName, EventEnvelope envelope, CancellationToken ct)
+    {
+        message?.Bind(envelope);
+        return Resolve(consumerName).HandleAsync(envelope, ct);
+    }
+    public Task RebuildAsync(string consumerName, EventEnvelope envelope, CancellationToken ct)
+    {
+        message?.Bind(envelope);
+        return Resolve(consumerName).RebuildProjectionAsync(envelope, ct);
+    }
     private ConsumerEventHandler Resolve(string consumerName) => consumerName switch
     {
         ConsumerNames.Formalization => services.GetRequiredService<FormalizationEventHandler>(),

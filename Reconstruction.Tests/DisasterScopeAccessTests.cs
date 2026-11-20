@@ -36,6 +36,21 @@ public sealed class DisasterScopeAccessTests
         Assert.Equal(new[] { 4 }, ordinary.AllowedDisasters);
     }
 
+    [Fact]
+    public void BackgroundProjectionHasOnlyItsEventScopeAndNeverOverridesHttpClaims()
+    {
+        var context = new HttpContextAccessor();
+        var message = new Reconstruction.Infrastructure.Messaging.MessageDisasterScope();
+        var access = new DisasterScopeAccess(context, new OwnerResponse(), message);
+        Assert.Empty(access.AllowedDisasters!);
+        message.Bind(new Reconstruction.Application.Ports.EventEnvelope(Guid.NewGuid(), "reconstruction.proposals.generated", 4, null, "worker", "projection", DateTimeOffset.UtcNow));
+        Assert.Equal(new[] { 4 }, access.AllowedDisasters);
+        Assert.Throws<InvalidOperationException>(() => message.Bind(new Reconstruction.Application.Ports.EventEnvelope(Guid.NewGuid(), "reconstruction.proposals.generated", 5, null, "worker", "projection", DateTimeOffset.UtcNow)));
+        context.HttpContext = new DefaultHttpContext();
+        context.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("disaster_id", "9") }, "Bearer"));
+        Assert.Equal(new[] { 9 }, access.AllowedDisasters);
+    }
+
     private sealed class OwnerResponse : HttpMessageHandler, IHttpClientFactory
     {
         public string Json = "[{\"id\":4},{\"id\":10}]";

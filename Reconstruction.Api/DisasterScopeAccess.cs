@@ -5,11 +5,13 @@ using Reconstruction.Application.Ports;
 
 namespace Reconstruction.Api;
 
-public sealed class DisasterScopeAccess(IHttpContextAccessor context, IHttpClientFactory clients) : IDisasterAccess
+public sealed class DisasterScopeAccess(IHttpContextAccessor context, IHttpClientFactory clients, Reconstruction.Infrastructure.Messaging.MessageDisasterScope? message = null) : IDisasterAccess
 {
     private HashSet<int>? resolved;
-    public IReadOnlyCollection<int>? AllowedDisasters => resolved ?? context.HttpContext!.User.FindAll("disaster_id")
-        .Select(claim => int.TryParse(claim.Value, out var id) ? id : 0).Where(id => id > 0).ToHashSet();
+    public IReadOnlyCollection<int>? AllowedDisasters => context.HttpContext is { } http
+        ? resolved ?? http.User.FindAll("disaster_id")
+            .Select(claim => int.TryParse(claim.Value, out var id) ? id : 0).Where(id => id > 0).ToHashSet()
+        : message?.AllowedDisasters ?? [];
 
     public async Task ResolveAsync(CancellationToken ct)
     {

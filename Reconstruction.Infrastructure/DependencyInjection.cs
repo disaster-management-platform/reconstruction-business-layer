@@ -53,6 +53,7 @@ public static class DependencyInjection
         services.AddScoped<ClosureEventHandler>();
         services.AddScoped<TimelineEventHandler>();
         services.AddScoped<WorkflowService>();
+        services.AddScoped<MessageDisasterScope>();
         services.AddScoped<ConsumerInboxDispatcher>();
         services.AddHostedService<WorkflowProjectionRecovery>();
         services.AddScoped<IReconstructionFacade, ReconstructionFacade>();
